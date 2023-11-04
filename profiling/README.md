@@ -4,8 +4,9 @@ This folder is for profiling of common LLMs.
 
 Usage:
 
-1. First install `llama` from local: `pip install -e .`
-2. Follow instruction in Code part.
+1. First install PyTorch.
+2. Install `llama` from local: `pip install -e .`
+3. Follow instruction in Code part.
 
 Findings (all experiments are conducted on a single RTX 3090 GPU):
 1. KV cache size: 32 (layers) * [1, 512, 32, 128] (max_batch_size, max_seq_len, n_local_kv_heads, head_dim) * 2 bytes (half) * 2 (k,v) = 256Mb, check `model.py` line 285-286
