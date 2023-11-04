@@ -486,7 +486,7 @@ class Transformer(nn.Module):
         output = self.output(h).float()
         return output
 
-    def copy_kv_cache(self):
+    def copy_kv_cache_to_cpu(self):
         cache_ks = []
         cache_vs = []
         torch.cuda.cudart().cudaProfilerStart()
@@ -495,13 +495,22 @@ class Transformer(nn.Module):
             for i in range(self.params.n_layers):
                 _ = self.layers[i].attention.cache_k.to('cpu')
                 _ = self.layers[i].attention.cache_v.to('cpu')
-                # cache_ks.append(self.layers[i].attention.cache_k.to('cpu'))
-                # cache_vs.append(self.layers[i].attention.cache_v.to('cpu'))
             torch.cuda.nvtx.range_pop()
-            # torch.cuda.nvtx.range_push("cpu_to_gpu")
-            # for i in range(self.params.n_layers):
-            #     _ = cache_ks[i].cuda()
-            #     _ = cache_vs[i].cuda()
-            # torch.cuda.nvtx.range_pop()
         torch.cuda.cudart().cudaProfilerStop()
-        return self.params.n_layers
+        return self.params.n_layers, self.layers[0].attention.cache_k.shape, self.layers[0].attention.cache_k.nelement() * self.layers[0].attention.cache_k.element_size()
+
+    def copy_kv_cache_to_gpu(self):
+        cache_ks = []
+        cache_vs = []
+        for i in range(self.params.n_layers):
+            cache_ks.append(self.layers[i].attention.cache_k.to('cpu'))
+            cache_vs.append(self.layers[i].attention.cache_v.to('cpu'))
+        torch.cuda.cudart().cudaProfilerStart()
+        for j in range(100):
+            torch.cuda.nvtx.range_push("cpu_to_gpu")
+            for i in range(self.params.n_layers):
+                _ = cache_ks[i].cuda()
+                _ = cache_vs[i].cuda()
+            torch.cuda.nvtx.range_pop()
+        torch.cuda.cudart().cudaProfilerStop()
+        return self.params.n_layers, self.layers[0].attention.cache_k.shape, self.layers[0].attention.cache_k.nelement() * self.layers[0].attention.cache_k.element_size()

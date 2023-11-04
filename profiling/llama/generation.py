@@ -360,7 +360,7 @@ class Llama:
                 eos=False,
             )
             prompt_tokens.append(dialog_tokens)
-
+        start_time = time.time()  # Start the timer
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
@@ -368,6 +368,8 @@ class Llama:
             top_p=top_p,
             logprobs=logprobs,
         )
+        elapsed_time = time.time() - start_time  # Calculate the elapsed time
+        print(f"self.generate Time taken: {elapsed_time:.2f} seconds")
         if logprobs:
             return [
                 {

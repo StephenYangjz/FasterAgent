@@ -40,8 +40,8 @@ def main(
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
     )
-
-    print(generator.model.copy_kv_cache())
+    print(generator.model.copy_kv_cache_to_cpu())
+    print(generator.model.copy_kv_cache_to_gpu())
 
 if __name__ == "__main__":
     fire.Fire(main)
