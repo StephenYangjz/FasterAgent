@@ -19,6 +19,7 @@ Findings (all experiments are conducted on a single RTX 3090 GPU):
 | KV Cache Size            | 256 MB           | 256 MB          | 200 MB           |
 | Moving Time (htod, dtoh) | 21, 21 ms        | 25.8, 25.3 ms   | 38.0, 18.5 ms    |
 | Moving Bandwidth         | 12.20, 12.20 GB/s| 9.92, 10.12 GB/s| 5.27, 10.80 GB/s |
+| nvbandwidth              | 25.00 GB/s       | 24.55 GB/s      | 26.33 GB/s       |
 | Total Tokens             | 432              | 432             | 495              |
 | Token Generation Time    | 9.19 s           | 11.56 s         | 48.63 s          |
 | Token Generation Speed   | 47.03 tokens/s   | 37.36 tokens/s  | 10.18 tokens/s   |
