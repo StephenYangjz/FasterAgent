@@ -15,6 +15,21 @@ from fairscale.nn.model_parallel.layers import (
 )
 from torch import nn
 
+# from torch.utils.data import Dataset, DataLoader
+
+# class LayerTransferDataset(Dataset):
+#     def __init__(self, layers):
+#         self.layers = layers
+
+#     def __len__(self):
+#         return len(self.layers)
+
+#     def __getitem__(self, idx):
+#         # Transfer tensors of the specific layer to CPU
+#         layer = self.layers[idx]
+#         k_cpu = layer.attention.cache_k.to('cpu', non_blocking=True)
+#         v_cpu = layer.attention.cache_v.to('cpu', non_blocking=True)
+#         return k_cpu, v_cpu
 
 @dataclass
 class ModelArgs:
@@ -496,6 +511,8 @@ class Transformer(nn.Module):
                 _ = self.layers[i].attention.cache_k.to('cpu')
                 _ = self.layers[i].attention.cache_v.to('cpu')
             torch.cuda.nvtx.range_pop()
+            del _
+            torch.cuda.empty_cache()
         torch.cuda.cudart().cudaProfilerStop()
         return self.params.n_layers, self.layers[0].attention.cache_k.shape, self.layers[0].attention.cache_k.nelement() * self.layers[0].attention.cache_k.element_size()
 
@@ -512,5 +529,60 @@ class Transformer(nn.Module):
                 _ = cache_ks[i].cuda()
                 _ = cache_vs[i].cuda()
             torch.cuda.nvtx.range_pop()
+            del _
+            torch.cuda.empty_cache()
         torch.cuda.cudart().cudaProfilerStop()
         return self.params.n_layers, self.layers[0].attention.cache_k.shape, self.layers[0].attention.cache_k.nelement() * self.layers[0].attention.cache_k.element_size()
+
+    def to_cuda(self):
+        self.cache_ks = []
+        self.cache_vs = []
+        
+        for i in range(self.params.n_layers):
+            self.cache_ks.append(self.layers[i].attention.cache_k.to('cpu'))
+            self.cache_vs.append(self.layers[i].attention.cache_v.to('cpu'))
+        torch.cuda.cudart().cudaProfilerStart()
+        from concurrent.futures import ThreadPoolExecutor
+        for j in range(100):
+            torch.cuda.nvtx.range_push("cpu_to_gpu")
+            with ThreadPoolExecutor(max_workers=self.params.n_layers) as executor:
+                executor.map(self.move_to_cuda, range(self.params.n_layers))
+            torch.cuda.nvtx.range_pop()
+        torch.cuda.cudart().cudaProfilerStop()
+
+    def move_to_cuda(self, index):
+        _ = self.cache_ks[index].cuda()
+        _ = self.cache_vs[index].cuda()
+
+    # def to_cpu(self):
+    #     from concurrent.futures import ThreadPoolExecutor
+    #     from torch.cuda import Stream
+    #     torch.cuda.cudart().cudaProfilerStart()
+
+    #     def move_to_cpu(index):
+    #         with torch.cuda.stream(Stream()):
+    #             self.layers[index].attention.cache_k.to('cpu', non_blocking=True)
+    #             self.layers[index].attention.cache_v.to('cpu', non_blocking=True)
+    #             torch.cuda.current_stream().synchronize()
+
+    #     for j in range(100):
+    #         torch.cuda.nvtx.range_push("gpu_to_cpu")
+    #         with ThreadPoolExecutor(max_workers=self.params.n_layers) as executor:
+    #             executor.map(move_to_cpu, range(self.params.n_layers))
+    #         torch.cuda.nvtx.range_pop()
+
+    #     torch.cuda.cudart().cudaProfilerStop()
+        
+    # def to_cpu(self):
+    #     torch.cuda.cudart().cudaProfilerStart()
+
+    #     # Create dataset and dataloader
+    #     dataset = LayerTransferDataset(self.layers)
+    #     loader = DataLoader(dataset, batch_size=1, num_workers=self.params.n_layers)  # Adjust num_workers as needed
+
+    #     # Iterate over the DataLoader to move tensors to CPU
+    #     for k_cpu, v_cpu in loader:
+    #         # You can process or store k_cpu, v_cpu as needed
+    #         pass
+
+    #     torch.cuda.cudart().cudaProfilerStop()

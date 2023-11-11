@@ -24,6 +24,15 @@ Findings (all experiments are conducted on a single RTX 3090 GPU):
 | Token Generation Time    | 9.19 s           | 11.56 s         | 48.63 s          |
 | Token Generation Speed   | 47.03 tokens/s   | 37.36 tokens/s  | 10.18 tokens/s   |
 
+Datapoints on 3090 (GtC, CtG (in ms)):
+1. 256 tokens, 11.8, 11.6
+2. 512 tokens, 21.3, 20.4
+3. 1024 tokens, 39.4, 37.7
+4. 2048 tokens, 75.8, 72.1
+5. 2560 tokens, 273.8, 90.5
+6. 3072 tokens, 325.1, 107.2
+7. 4096 tokens, 590.4, 143.1
+
 
 ```bash
 nsys profile -o profile_report torchrun --nproc_per_node 1 copy_test.py \
@@ -55,6 +64,8 @@ nsys profile -o profile_report torchrun --nproc_per_node 1 copy_test.py \
     --max_seq_len 512 --max_batch_size 1
 ```
 2. `nsys stats profile_report.nsys-rep` could reveil the copy speed.
+
+3. Use https://github.com/NVIDIA/nvbandwidth to check the bandwidth of GPU.
 
 ### Generation speed
 Measure generation speed.

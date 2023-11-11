@@ -43,5 +43,8 @@ def main(
     print(generator.model.copy_kv_cache_to_cpu())
     print(generator.model.copy_kv_cache_to_gpu())
 
+    # print(generator.model.to_cuda())
+    # print(generator.model.to_cpu())
+
 if __name__ == "__main__":
     fire.Fire(main)
