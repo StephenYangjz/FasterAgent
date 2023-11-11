@@ -502,8 +502,6 @@ class Transformer(nn.Module):
         return output
 
     def copy_kv_cache_to_cpu(self):
-        cache_ks = []
-        cache_vs = []
         torch.cuda.cudart().cudaProfilerStart()
         for j in range(100):
             torch.cuda.nvtx.range_push("gpu_to_cpu")
@@ -586,3 +584,37 @@ class Transformer(nn.Module):
     #         pass
 
     #     torch.cuda.cudart().cudaProfilerStop()
+    
+    def copy_kv_cache_to_cpu_merged(self):
+        d1, *shape = self.layers[0].attention.cache_k.shape
+        d1 = 0
+        merged_k = torch.randn((d1, *shape)).cuda()
+        merged_v = torch.randn((d1, *shape)).cuda()
+        for i in range(self.params.n_layers):
+            merged_k = torch.cat((merged_k, self.layers[i].attention.cache_k), dim=0)
+            merged_v = torch.cat((merged_v, self.layers[i].attention.cache_v), dim=0)
+        torch.cuda.cudart().cudaProfilerStart()
+        for j in range(100):
+            torch.cuda.nvtx.range_push("gpu_to_cpu_merged")
+            _ = merged_k.to('cpu')
+            _ = merged_v.to('cpu')
+            torch.cuda.nvtx.range_pop()
+        torch.cuda.cudart().cudaProfilerStop()
+        return merged_k.shape
+
+    def copy_kv_cache_to_gpu_merged(self):
+        d1, *shape = self.layers[0].attention.cache_k.shape
+        d1 = 0
+        merged_k = torch.randn((d1, *shape), device='cpu')
+        merged_v = torch.randn((d1, *shape), device='cpu')
+        for i in range(self.params.n_layers):
+            merged_k = torch.cat((merged_k, self.layers[i].attention.cache_k.to('cpu')), dim=0)
+            merged_v = torch.cat((merged_v, self.layers[i].attention.cache_v.to('cpu')), dim=0)
+        torch.cuda.cudart().cudaProfilerStart()
+        for j in range(100):
+            torch.cuda.nvtx.range_push("cpu_to_gpu_merged")
+            _ = merged_k.cuda()
+            _ = merged_v.cuda()
+            torch.cuda.nvtx.range_pop()
+        torch.cuda.cudart().cudaProfilerStop()
+        return merged_k.shape
