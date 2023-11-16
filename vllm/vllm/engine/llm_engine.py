@@ -782,7 +782,7 @@ if __name__ == '__main__':
     the following task.\nFirst I will give you the task description, and your task start.\nAt each step, you need to give your thought to analyze the status now and what to do next, with a function call to actually excute your step.\nAfter the call, you will get the call result, and you are now in a new state.\nThen you will analyze your status now, then decide what to do next...\nAfter many (Thought-call) pairs, you finally perform the task, then you can give your finial answer.\nRemember: \n1.the state change is , you can\'t go back to the former state, if you want to restart the task, say "I give up and restart".\n2.All the thought is short, at most in 5 sentence.\nLet\'s Begin!\nTask description: Use numbers and basic arithmetic operations (+ - * /) to obtain exactly one number=24. Each step, you are only allowed to choose two of the left numbers to obtain a new number. For example, you can combine [3,13,9,7] as 7*9 - 3*13 = 24.\nRemember:\n1.all of the number must be used , and must be used ONCE. So Only when left numbers is exact 24, you will win. So you don\'t succeed when left number = [24, 5]. You succeed when left number = [24]. \n2.all the try takes exactly 3 steps, look at the input format'''}, 
     {'role': 'user', 'content': '\nThe real task input is: [1, 2, 4, 7]\nBegin!\n'}
     ]
-    functions = [{'name': 'play_24', 'description': '''make your current conbine with the format "x operation y = z (left: aaa) " like "1+2=3, (left: 3 5 7)", then I will tell you whether you win. This is the ONLY way to interact with the game, and the total process of a input use 3 steps of call, each step you can only combine 2 of the left numbers, so the count of left numbers decrease from 4 to 1''','parameters':{'type': 'object', 'properties':{}}}, {'name': 'play_24', 'description': '''make your current conbine with the format "x operation y = z (left: aaa) " like "1+2=3, (left: 3 5 7)", then I will tell you whether you win. This is the ONLY way to interact with the game, and the total process of a input use 3 steps of call, each step you can only combine 2 of the left numbers, so the count of left numbers decrease from 4 to 1''','parameters':{'type': 'object', 'properties':{}}}]
+    functions = [{'name': 'play_24', 'description': '''make your current conbine with the format "x operation y = z (left: aaa) " like "1+2=3, (left: 3 5 7)", then I will tell you whether you win. This is the ONLY way to interact with the game, and the total process of a input use 3 steps of call, each step you can only combine 2 of the left numbers, so the count of left numbers decrease from 4 to 1''','parameters':{'type': 'object', 'properties':{}}}, {'name': 'racecards_for_greyhound_racing_uk', 'description': '''make your current conbine with the format "x operation y = z (left: aaa) " like "1+2=3, (left: 3 5 7)", then I will tell you whether you win. This is the ONLY way to interact with the game, and the total process of a input use 3 steps of call, each step you can only combine 2 of the left numbers, so the count of left numbers decrease from 4 to 1''','parameters':{'type': 'object', 'properties':{}}}]
     print(input_prompt(message_history, functions))
 
     def output_parser(string):
@@ -802,3 +802,29 @@ if __name__ == '__main__':
     string = "\nThought: I need to call the \"racecards_for_greyhound_racing_uk\" function to get the race schedule and details of greyhound races in the UK. The user wants to know the dates, timings, and locations of the races, as well as specific information about race ID 53128. By calling this function with no arguments, I can retrieve the desired information and provide it to the user.\nAction: racecards_for_greyhound_racing_uk\nAction Input: {}"
 
     print(output_parser(string))
+
+    def extract(full_string, message_history):
+        # todo: add error handling
+        # extract last generated string from whole
+        last_message = full_string[len(input_prompt(message_history, functions)):]
+        message = output_parser(last_message)
+        return message
+    print('-'*20)
+    extracted = extract(input_prompt(message_history, functions)+ string, message_history)
+    print(extracted)
+
+    def function_caller(function_call, functions):
+        # "function_call": {
+        #     "name": action,
+        #     "arguments": action_input
+        # }
+        for f in functions:
+            if f['name'] == function_call['name'][0]:
+                function = f
+                break
+        else:
+            raise ValueError("function not in functions")
+        return function['eval_args']
+
+    if "function_call" in extracted:
+        print(function_caller(extracted['function_call'], functions))
