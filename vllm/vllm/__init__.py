@@ -7,6 +7,7 @@ from vllm.engine.ray_utils import initialize_cluster
 from vllm.entrypoints.llm import LLM
 from vllm.outputs import CompletionOutput, RequestOutput
 from vllm.sampling_params import SamplingParams
+from vllm.agents.misc import get_conv_template
 
 __version__ = "0.2.1"
 
@@ -20,4 +21,5 @@ __all__ = [
     "AsyncLLMEngine",
     "AsyncEngineArgs",
     "initialize_cluster",
+    "get_conv_template"
 ]

@@ -18,6 +18,8 @@ from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
                                                get_tokenizer)
 from vllm.utils import Counter
 
+from vllm.agents.misc import get_conv_template, process_system_message
+
 if ray:
     from ray.air.util.torch_dist import init_torch_dist_process_group
     from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
@@ -233,6 +235,51 @@ class LLMEngine:
                      placement_group,
                      log_stats=not engine_args.disable_log_stats)
         return engine
+    
+    # generate input prompt for toollama
+    def input_prompt(self, conversation_history, functions):
+        template = "tool-llama-single-round"
+        conv = get_conv_template(template)
+        roles = {"system": conv.roles[0], "user": conv.roles[1], "function": conv.roles[2], "assistant": conv.roles[3]}
+
+        self.time = time.time()
+        prompt = ''
+        for message in conversation_history:
+            role = roles[message['role']]
+            content = message['content']
+            if role == "System" and functions != []:
+                content = process_system_message(content, functions)
+            prompt += f"{role}: {content}\n"
+        prompt += "Assistant:\n"
+        
+        return prompt
+
+    # parse input string into prompt, functions, times, and sample responses
+    # we need to define a proper format for inputs, maybe json
+    def input_parser(self, input_string):
+        # parse input string into prompt, functions, and time
+        input_string = input_string.split("\n")
+        prompt = input_string[0]
+        functions = input_string[1].split(",")
+        times = input_string[2].split(",")
+        times = [float(time) for time in times]
+        sample_responses = input_string[3:]
+        return prompt, functions, times, sample_responses
+
+    # parse toollama outputs to get the thought, action, and action input
+    def output_parser(self, string):
+        thought = [string[string.find("Thought: ") + len("Thought: "): string.find("\nAction: ")]]
+        action = [string[string.find("Action: ") + len("Action: "): string.find("\nAction Input: ")]]
+        action_input = [string[string.find("Action Input: ") + len("Action Input: "):]]
+        message = {
+            "role": "assistant",
+            "content": thought,
+            "function_call": {
+                "name": action,
+                "arguments": action_input
+            }
+        }
+        return message
 
     def add_request(
         self,
