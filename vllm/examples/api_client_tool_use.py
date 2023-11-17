@@ -15,11 +15,66 @@ def clear_line(n: int = 1) -> None:
         print(LINE_UP, end=LINE_CLEAR, flush=True)
 
 
-def post_http_request(prompt: str,
-                      api_url: str,
+def post_http_request(api_url: str,
                       n: int = 1,
-                      stream: bool = False) -> requests.Response:
+                      stream: bool = False,
+                      query: str = None,
+                      functions: List[dict] = None,
+                      responses: List[dict] = None,
+                      max_tokens: int = 256,
+                      temperature: float = 0.3) -> requests.Response:
     headers = {"User-Agent": "Test Client"}
+    user_message = process_user_message(query)
+    system_message = process_system_message(functions)
+    new_functions = []
+    for function, response in zip(functions, responses):
+        function["call_info"] = response
+        new_functions.append(function)
+    functions = new_functions
+    pload = {
+        "prompt": "",
+        "n": n,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+        "messages": [{
+            "role": "system",
+            "content": system_message,
+        }, {
+            "role": "user",
+            "content": user_message,
+        }],
+        "functions": functions,
+    }
+    response = requests.post(api_url, headers=headers, json=pload, stream=True)
+    return response
+
+
+def get_streaming_response(response: requests.Response) -> Iterable[List[str]]:
+    for chunk in response.iter_lines(chunk_size=8192,
+                                     decode_unicode=False,
+                                     delimiter=b"\0"):
+        if chunk:
+            data = json.loads(chunk.decode("utf-8"))
+            output = data["text"]
+            yield output
+
+
+def get_response(response: requests.Response) -> List[str]:
+    data = json.loads(response.content)
+    output = data["text"]
+    return output
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--n", type=int, default=1)
+    # parser.add_argument("--prompt", type=str, default="San Francisco is a")
+    parser.add_argument("--stream", action="store_true")
+    args = parser.parse_args()
+    query = '''I'm a researcher studying body fat percentage in individuals. Can you provide me with the necessary API to calculate body fat percentage based on imperial units? Also, fetch the hospitals' details for the nearest hospital to my university in Los Angeles.'''
     functions = [{
         "name": "bodyfat_imperial_for_health_calculator_api",
         "description": '''This is the subfunction for tool \"health_calculator_api\", you can use this tool.The description of this function is: \"This endpoint calculates the body fat percentage based on the provided gender, age, height, and weight parameters in imperial units.\"''',
@@ -95,6 +150,7 @@ def post_http_request(prompt: str,
             ],
         },
     }]
+
     responses = [{
         "time": 200,
         "response": {                                                                                                                                                            
@@ -113,94 +169,13 @@ def post_http_request(prompt: str,
         "time": 0,
         "response": {}
     }]
-    query = '''I'm a researcher studying body fat percentage in individuals. Can you provide me with the necessary API to calculate body fat percentage based on imperial units? Also, fetch the hospitals' details for the nearest hospital to my university in Los Angeles.'''
-    user_message = process_user_message(query)
-    system_message = process_system_message(functions)
-    new_functions = []
-    for function, response in zip(functions, responses):
-        function["call_info"] = response
-        new_functions.append(function)
-    functions = new_functions
-    pload = {
-        "prompt": prompt,
-        "n": n,
-        "temperature": 0.0,
-        "max_tokens": 200,
-        "stream": stream,
-        "messages": [{
-            "role": "system",
-            "content": system_message,
-        }, {
-            "role": "user",
-            "content": user_message,
-        }],
-        "functions": functions,
-    }
-    response = requests.post(api_url, headers=headers, json=pload, stream=True)
-    return response
 
-
-def get_streaming_response(response: requests.Response) -> Iterable[List[str]]:
-    for chunk in response.iter_lines(chunk_size=8192,
-                                     decode_unicode=False,
-                                     delimiter=b"\0"):
-        if chunk:
-            data = json.loads(chunk.decode("utf-8"))
-            output = data["text"]
-            yield output
-
-
-def get_response(response: requests.Response) -> List[str]:
-    data = json.loads(response.content)
-    output = data["text"]
-    return output
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default="localhost")
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--n", type=int, default=4)
-    parser.add_argument("--prompt", type=str, default="San Francisco is a")
-    parser.add_argument("--stream", action="store_true")
-    args = parser.parse_args()
-    prompt = '''System: You are AutoGPT, you can use many tools(functions) to do
-the following task.
-First I will give you the task description, and your task start.
-At each step, you need to give your thought to analyze the status now and what to do next, with a function call to actually execute your step. Your output should fol$
-ow this format:
-Thought:
-Action:
-Action Input:
-After the call, you will get the call result, and you are now in a new state.
-Then you will analyze your status now, then decide what to do next...
-After many (Thought-call) pairs, you finally perform the task, then you can give your final answer.
-Remember:
-1.the state change is , you can\\'t go
-back to the former state, if you want to restart the task, say "I give up and restart".
-2.All the thought is short, at most in 5 sentences.
-Let\\'s Begin!
-Task description: Use numbers and basic arithmetic operations (+ - * /) to obtain exactly one number=24. Each
-step, you are only allowed to choose two of the left numbers to obtain a new number. For example, you can combine [3,13,9,7] as 7*9 - 3*13 = 24.
-Remember:
-1.all of the number must be used, and must be used ONCE. So Only when left numbers is exactly 24, you will win. So you don\\'t succeed when left number = [24, 5]. You succeed when left number = [24].
-2.all the try takes exactly 3 steps, look
-at the input format
-Specifically, you have access to the following APIs: [{'name': 'play_24', 'description': 'make your current combine with the format "x operation y = z (left: aaa) "
-like "1+2=3, (left: 3 5 7)", then I will tell you whether you win. This is the ONLY way
-to interact with the game, and the total process of a input use 3 steps of call, each step you can only combine 2 of the left numbers, so the count of left numbers decrease from 4 to 1', 'parameters': {'type': 'object', 'properties': {}}}] 
-User:
-The real task input is: [1, 2, 4, 7]
-Begin!
-
-Assistant:
-'''
     api_url = f"http://{args.host}:{args.port}/generate"
     n = args.n
     stream = args.stream
 
-    print(f"Prompt: {prompt!r}\n", flush=True)
-    response = post_http_request(prompt, api_url, n, stream)
+    # print(f"Prompt: {prompt!r}\n", flush=True)
+    response = post_http_request(api_url, n, stream, query=query, functions=functions, responses=responses)
 
     if stream:
         num_printed_lines = 0
