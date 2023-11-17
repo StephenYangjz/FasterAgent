@@ -1,6 +1,6 @@
 import enum
 import time
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union, Any
 
 from vllm.config import CacheConfig, SchedulerConfig
 from vllm.core.block_manager import BlockSpaceManager
@@ -8,6 +8,9 @@ from vllm.core.policy import PolicyFactory
 from vllm.logger import init_logger
 from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceGroupMetadata, SequenceStatus)
+from vllm.agents.utils import input_prompt
+from vllm.transformers_utils.tokenizer import detokenize_incrementally
+from vllm.sampling_params import SamplingParams
 
 logger = init_logger(__name__)
 
@@ -59,6 +62,7 @@ class Scheduler:
         self,
         scheduler_config: SchedulerConfig,
         cache_config: CacheConfig,
+        tokenizer: Any,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
@@ -82,6 +86,11 @@ class Scheduler:
         self.running: List[SequenceGroup] = []
         # Sequence groups in the SWAPPED state.
         self.swapped: List[SequenceGroup] = []
+        # Sequence groups in the API_BLOCKED state.
+        self.blocked: List[SequenceGroup] = []
+
+        self.blocks_to_swap_out: Dict[int, int] = {}
+        self.tokenizer = tokenizer
 
     def add_seq_group(self, seq_group: SequenceGroup) -> None:
         # Add sequence groups to the waiting queue.
@@ -109,7 +118,7 @@ class Scheduler:
                         return
 
     def has_unfinished_seqs(self) -> bool:
-        return self.waiting or self.running or self.swapped
+        return self.waiting or self.running or self.swapped or self.blocked
 
     def get_num_unfinished_seq_groups(self) -> int:
         return len(self.waiting) + len(self.running) + len(self.swapped)
@@ -119,9 +128,22 @@ class Scheduler:
         blocks_to_swap_in: Dict[int, int] = {}
         blocks_to_swap_out: Dict[int, int] = {}
         blocks_to_copy: Dict[int, List[int]] = {}
+        if self.blocks_to_swap_out:
+            blocks_to_swap_out.update(self.blocks_to_swap_out)
+            self.blocks_to_swap_out = {}
 
         # Fix the current time.
         now = time.monotonic()
+
+        for seq_group in list(self.blocked):
+            seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+            assert len(seqs) == 1
+            ready_num = 0
+            for seq in seqs:
+                if seq.api_info.task.done():
+                    ready_num += 1
+            if ready_num == len(seqs):
+                self.unblock(seq_group)
 
         # Join waiting sequences if possible.
         if not self.swapped:
@@ -340,11 +362,7 @@ class Scheduler:
         # over sequence groups with a single sequence.
         # TODO(woosuk): Support recomputation for sequence groups with multiple
         # sequences. This may require a more sophisticated CUDA kernel.
-        if preemption_mode is None:
-            if seq_group.get_max_num_running_seqs() == 1:
-                preemption_mode = PreemptionMode.RECOMPUTE
-            else:
-                preemption_mode = PreemptionMode.SWAP
+        preemption_mode = self.get_preemption_mode(seq_group, preemption_mode)
         if preemption_mode == PreemptionMode.RECOMPUTE:
             self._preempt_by_recompute(seq_group)
         elif preemption_mode == PreemptionMode.SWAP:
@@ -398,3 +416,111 @@ class Scheduler:
         blocks_to_swap_out.update(mapping)
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             seq.status = SequenceStatus.SWAPPED
+
+    def unblock(self,
+        seq_group: SequenceGroup,
+        preemption_mode: Optional[PreemptionMode] = None) -> None:
+        self.blocked.remove(seq_group)
+        preemption_mode = self.get_preemption_mode(seq_group, preemption_mode)
+        if preemption_mode == PreemptionMode.RECOMPUTE:
+            self._unblock_by_recompute(seq_group)
+        elif preemption_mode == PreemptionMode.SWAP:
+            self._unblock_by_swap(seq_group)
+        else:
+            assert False, "Invalid preemption mode."
+
+    def block(self,
+        seq_group: SequenceGroup,
+        preemption_mode: Optional[PreemptionMode] = None) -> None:
+        self.blocked.append(seq_group)
+        self.running.remove(seq_group)
+        seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
+        for seq in seqs:
+            seq.status = SequenceStatus.API_BLOCKED
+        preemption_mode = self.get_preemption_mode(seq_group, preemption_mode)
+        if preemption_mode == PreemptionMode.RECOMPUTE:
+            self._block_by_recompute(seq_group)
+        elif preemption_mode == PreemptionMode.SWAP:
+            self._block_by_swap(seq_group, self.blocks_to_swap_out)
+        else:
+            assert False, "Invalid preemption mode."
+
+    def _block_by_recompute(
+        self,
+        seq_group: SequenceGroup,
+    ) -> None:
+        seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+        assert len(seqs) == 1
+        for seq in seqs:
+            self.block_manager.free(seq)
+
+    def _unblock_by_recompute(
+        self,
+        seq_group: SequenceGroup,
+    ) -> None:
+        seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+        assert len(seqs) == 1
+        for seq in seqs:
+            seq.api_info.conversation_history.append(seq.api_info.task.result())
+            new_prompt = input_prompt([seq.api_info.task.result()])
+            new_prompt_token_ids = self.tokenizer.encode(new_prompt)
+            for token_id in new_prompt_token_ids:
+                seq.append_token_id(token_id, {token_id: 0})
+                self._decode_sequence(seq, seq_group.sampling_params)
+            seq.status = SequenceStatus.WAITING
+        # NOTE: For FCFS, we insert the preempted sequence group to the front
+        # of the waiting queue.
+        self.waiting.insert(0, seq_group)
+
+    def _block_by_swap(
+        self,
+        seq_group: SequenceGroup,
+        blocks_to_swap_out: Dict[int, int],
+    ) -> None:
+        if not self.block_manager.can_swap_out(seq_group):
+            # FIXME(woosuk): Abort the sequence group instead of aborting the
+            # entire engine.
+            raise RuntimeError(
+                "Aborted due to the lack of CPU swap space. Please increase "
+                "the swap space to avoid this error.")
+        mapping = self.block_manager.swap_out(seq_group)
+        blocks_to_swap_out.update(mapping)
+
+    def _unblock_by_swap(
+        self,
+        seq_group: SequenceGroup,
+    ) -> None:
+        for seq in seq_group.get_seqs(status=SequenceStatus.API_BLOCKED):
+            seq.status = SequenceStatus.SWAPPED
+        self.swapped.append(seq_group)
+        # TODO Deal with swap mode
+        raise NotImplementedError
+
+    def get_preemption_mode(self, seq_group: SequenceGroup,
+        preemption_mode: Optional[PreemptionMode] = None) -> PreemptionMode:
+        if preemption_mode is None:
+            if seq_group.get_max_num_running_seqs() == 1:
+                preemption_mode = PreemptionMode.RECOMPUTE
+            else:
+                preemption_mode = PreemptionMode.SWAP
+        return preemption_mode
+
+    def _decode_sequence(self, seq: Sequence, prms: SamplingParams) -> None:
+        """Decodes the new token for a sequence."""
+        (new_tokens, new_output_text, prefix_offset,
+         read_offset) = detokenize_incrementally(
+             self.tokenizer,
+             all_input_ids=seq.get_token_ids(),
+             prev_tokens=seq.tokens,
+             prefix_offset=seq.prefix_offset,
+             read_offset=seq.read_offset,
+             skip_special_tokens=prms.skip_special_tokens,
+             spaces_between_special_tokens=prms.spaces_between_special_tokens,
+         )
+        if seq.tokens is None:
+            seq.tokens = new_tokens
+        else:
+            seq.tokens.extend(new_tokens)
+        seq.prefix_offset = prefix_offset
+        seq.read_offset = read_offset
+        seq.output_text += new_output_text

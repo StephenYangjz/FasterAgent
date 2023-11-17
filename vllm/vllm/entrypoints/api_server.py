@@ -10,6 +10,7 @@ from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
+from vllm.agents.utils import input_prompt, APIInfo
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds.
 TIMEOUT_TO_PREVENT_DEADLOCK = 1  # seconds.
@@ -33,12 +34,20 @@ async def generate(request: Request) -> Response:
     - other fields: the sampling parameters (See `SamplingParams` for details).
     """
     request_dict = await request.json()
-    prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
+    if "functions" in request_dict:
+        messages = request_dict.pop("messages")
+        functions = request_dict.pop("functions")
+        prompt = input_prompt(messages)
+        request_dict.pop("prompt")
+        api_info = APIInfo(messages, functions)
+    else:
+        prompt = request_dict.pop("prompt")
+        api_info = None
     sampling_params = SamplingParams(**request_dict)
     request_id = random_uuid()
 
-    results_generator = engine.generate(prompt, sampling_params, request_id)
+    results_generator = engine.generate(prompt, sampling_params, request_id, api_info=api_info)
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:

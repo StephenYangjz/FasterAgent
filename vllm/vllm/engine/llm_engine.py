@@ -19,6 +19,7 @@ from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
 from vllm.utils import Counter
 
 from vllm.agents.misc import get_conv_template, process_system_message
+from vllm.agents.utils import get_api_call, APIInfo, call_api
 
 if ray:
     from ray.air.util.torch_dist import init_torch_dist_process_group
@@ -115,7 +116,7 @@ class LLMEngine:
         self._init_cache()
 
         # Create the scheduler.
-        self.scheduler = Scheduler(scheduler_config, cache_config)
+        self.scheduler = Scheduler(scheduler_config, cache_config, self.tokenizer)
 
         # Logging.
         self.last_logging_time = 0.0
@@ -288,6 +289,7 @@ class LLMEngine:
         sampling_params: SamplingParams,
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
+        api_info: APIInfo = None,
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -314,7 +316,7 @@ class LLMEngine:
         # Create the sequences.
         block_size = self.cache_config.block_size
         seq_id = next(self.seq_counter)
-        seq = Sequence(seq_id, prompt, prompt_token_ids, block_size)
+        seq = Sequence(seq_id, prompt, prompt_token_ids, block_size, api_info)
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
@@ -433,15 +435,19 @@ class LLMEngine:
             for child_sample in child_samples[:-1]:
                 new_child_seq_id = next(self.seq_counter)
                 child = parent.fork(new_child_seq_id)
-                child.append_token_id(child_sample.output_token,
-                                      child_sample.logprobs)
+                should_call_api = self._check_api_call(child, child_sample.output_token, seq_group.sampling_params)
+                if not should_call_api:
+                    child.append_token_id(child_sample.output_token,
+                                        child_sample.logprobs)
                 child_seqs.append((child, parent))
             # Continue the parent sequence for the last child sample.
             # We reuse the parent sequence here to reduce redundant memory
             # copies, especially when using non-beam search sampling methods.
             last_child_sample = child_samples[-1]
-            parent.append_token_id(last_child_sample.output_token,
-                                   last_child_sample.logprobs)
+            should_call_api = self._check_api_call(parent, last_child_sample.output_token, seq_group.sampling_params)
+            if not should_call_api:
+                parent.append_token_id(last_child_sample.output_token,
+                                    last_child_sample.logprobs)
             child_seqs.append((parent, parent))
 
         for seq, _ in child_seqs:
@@ -575,6 +581,9 @@ class LLMEngine:
         scheduled_seq_groups = scheduler_outputs.scheduled_seq_groups
         for seq_group, outputs in zip(scheduled_seq_groups, output):
             self._process_sequence_group_outputs(seq_group, outputs)
+            seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+            if len(seqs) > 0:
+                self.scheduler.block(seq_group)
 
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
@@ -728,6 +737,18 @@ class LLMEngine:
                 and seq.get_last_token_id() == self.tokenizer.eos_token_id):
             seq.status = SequenceStatus.FINISHED_STOPPED
             return
+
+    def _check_api_call(self, seq: Sequence, last_token: int, sampling_params: SamplingParams) -> bool:
+        should_call_api = False
+        if ((not sampling_params.ignore_eos)
+                and last_token == self.tokenizer.eos_token_id and seq.api_info):
+            should_call_api, function_name, args_dict = get_api_call(seq.output_text, seq.api_info, len(seq.prompt))
+            logger.info(seq.api_info.conversation_history[-2])
+            logger.info(seq.api_info.conversation_history[-1])
+        if should_call_api:
+            seq.api_info.task = call_api(seq.api_info.function_info[function_name], args_dict)
+            seq.status = SequenceStatus.API_BLOCKED
+        return should_call_api
 
     def _run_workers(
         self,

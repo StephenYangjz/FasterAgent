@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union
 
 from vllm.block import LogicalTokenBlock
 from vllm.sampling_params import SamplingParams
+from vllm.agents.utils import APIInfo
 
 PromptLogprobs = List[Optional[Dict[int, float]]]
 SampleLogprobs = List[Dict[int, float]]
@@ -19,6 +20,7 @@ class SequenceStatus(enum.Enum):
     FINISHED_LENGTH_CAPPED = enum.auto()
     FINISHED_ABORTED = enum.auto()
     FINISHED_IGNORED = enum.auto()
+    API_BLOCKED = enum.auto()
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
@@ -113,6 +115,7 @@ class Sequence:
         prompt: str,
         prompt_token_ids: List[int],
         block_size: int,
+        api_info: APIInfo = None,
     ) -> None:
         self.seq_id = seq_id
         self.prompt = prompt
@@ -132,6 +135,7 @@ class Sequence:
         self.read_offset = 0
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
+        self.api_info = api_info
 
     def _append_logical_block(self) -> None:
         block = LogicalTokenBlock(
