@@ -67,8 +67,8 @@ class Scheduler:
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
 
-        self.prompt_limit = min(self.scheduler_config.max_model_len,
-                                self.scheduler_config.max_num_batched_tokens)
+        self.prompt_limit = 8192 #min(self.scheduler_config.max_model_len,
+                                # self.scheduler_config.max_num_batched_tokens)
 
         # Instantiate the scheduling policy.
         self.policy = PolicyFactory.get_policy(policy_name="fcfs")
