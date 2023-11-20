@@ -91,6 +91,7 @@ for d in tqdm(data):
                 match = re.search(pattern,function.get('description'))
                 # Extract the matched substring if a match is found
                 tool_name = match.group(1) if match else None
+                function["parent_tool"] = tool_name
                 tools.append(tool_name)
             tools = list(set(tools))
             times = {}

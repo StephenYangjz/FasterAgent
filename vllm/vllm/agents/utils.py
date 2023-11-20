@@ -9,6 +9,8 @@ class Function:
         self.parameters = parameters
         self.call_info = call_info
 
+    def __str__(self) -> str:
+        return f"Function: {self.name}\nParameters: {self.parameters}\nCall Info: {self.call_info}"
 
 class APIInfo:
     def __init__(self, conversation_history: List[Dict], functions: List[Dict]) -> None:
@@ -17,6 +19,9 @@ class APIInfo:
         self.task = None
         for function in functions:
             self.function_info[function["name"]] = Function(function["name"], function["parameters"], function["call_info"])
+    
+    def __str__(self) -> str:
+        return f"Conversation History: {self.conversation_history}\nFunction Info: {self.function_info}"
 
 def flatten(conversation_history):
     template = "tool-llama-single-round"

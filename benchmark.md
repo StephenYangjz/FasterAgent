@@ -6,7 +6,7 @@
 
 1. `CUDA_VISIBLE_DEVICES=0 ./launch_scripts/launch_vllm --port=8000 --model=ToolBench/ToolLLaMA-2-7b-v2`
 2. Use ```bash
-   python benchmark_throughput_tool.py --backend='vLLM' --port=8000 --prompts_filename=../API/api_query_data.json --allow_variable_generation_length --variable_response_lens_mean=50 --variable_response_lens_range=20 --variable_response_lens_distribution=uniform --verbose
+   python benchmark_throughput_tool.py --backend='vLLM' --port=8000 --prompts_filename=../API/api_query_data.json --allow_variable_generation_length --variable_response_lens_mean=512 --variable_response_lens_range=20 --variable_response_lens_distribution=uniform --verbose
    ```
    instead of
    ```bash

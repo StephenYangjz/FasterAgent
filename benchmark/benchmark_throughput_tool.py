@@ -16,6 +16,7 @@ import sys
 import time
 import numpy as np
 from test_prompts import process_system_message, process_user_message
+from vllm.agents.utils import input_prompt
 
 
 def get_wait_time(mean_time_between_requests: float, distribution: str) -> float:
@@ -71,19 +72,32 @@ async def query_model_vllm(
     temperature: float = 0.3,
 ):
     prompt, prompt_len, expected_response_len = prompt
-
+    
     query = prompt['user_prompt']
     functions = prompt['functions']
     responses = prompt['response']
+    times = prompt['times']
 
     headers = {"User-Agent": "Test Client"}
     user_message = process_user_message(query)
     system_message = process_system_message(functions)
     new_functions = []
-    for function, response in zip(functions, responses):
-        function["call_info"] = response
+    for function in functions:
+        if function["name"] == "Finish":
+            continue
+        time = times[function["parent_tool"]]
+        response = {"role": "function", "name": function["name"], "content": responses[function["parent_tool"]]}
+        function["call_info"] = {"time": time, "response": response}
         new_functions.append(function)
     functions = new_functions
+    messages = [{
+                    "role": "system",
+                    "content": system_message,
+                }, 
+                {
+                    "role": "user",
+                    "content": user_message,
+                }]
 
     timeout = aiohttp.ClientTimeout(total=4 * 60 * 60)
 
@@ -101,13 +115,7 @@ async def query_model_vllm(
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": stream,
-            "messages": [{
-                "role": "system",
-                "content": system_message,
-            }, {
-                "role": "user",
-                "content": user_message,
-            }],
+            "messages": messages,
             "functions": functions,
             "parameters": dict(
                 prompt_len=prompt_len,
@@ -122,7 +130,6 @@ async def query_model_vllm(
         ) as resp:
             if verbose:
                 print("Done")
-
             content = await resp.text()  # read the content as text (string)
             output = json.loads(content)
             # necessary for latency calc
@@ -130,7 +137,7 @@ async def query_model_vllm(
             if verbose and "generated_text" in output:
                 print(json.dumps(output["generated_text"]))
 
-            return (prompt, output)
+            return (input_prompt(messages), output)
 
 
 def load_prompts(prompt_file):
@@ -146,7 +153,6 @@ def load_prompts(prompt_file):
 def get_tok_id_lens(tokenizer, batch):
     tokenized = tokenizer.batch_encode_plus(batch)
     lens = [len(s) for s in tokenized["input_ids"]]
-    # print(lens)
     return lens
 
 
@@ -183,7 +189,6 @@ def calculate_throughput(
 
         if "response_len" in response:
             expected_response_lens.append(response["response_len"])
-
     prompt_ids = [p for p in tokenizer.batch_encode_plus(prompts)["input_ids"]]
     response_ids = [r for r in tokenizer.batch_encode_plus(responses)["input_ids"]]
 
@@ -193,8 +198,8 @@ def calculate_throughput(
     print(f"check_len expect {list(sorted(expected_response_lens))}")
     print(f"   self-reported {list(sorted(cf_gen_lens))}")
 
-    # for prompt, response, expected_response_len in zip(prompt_ids, response_ids, expected_response_lens):
-    #    print(f'check lens {len(prompt)=} {len(response)=} {expected_response_len=}')
+    for prompt, response, expected_response_len in zip(prompt_ids, response_ids, expected_response_lens):
+       print(f'check lens {len(prompt)=} {len(response)=} {expected_response_len=}')
 
     try:
         prompt_lens = get_tok_id_lens(tokenizer, prompts)

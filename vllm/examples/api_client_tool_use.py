@@ -21,7 +21,7 @@ def post_http_request(api_url: str,
                       query: str = None,
                       functions: List[dict] = None,
                       responses: List[dict] = None,
-                      max_tokens: int = 256,
+                      max_tokens: int = 1024,
                       temperature: float = 0.3) -> requests.Response:
     headers = {"User-Agent": "Test Client"}
     user_message = process_user_message(query)
