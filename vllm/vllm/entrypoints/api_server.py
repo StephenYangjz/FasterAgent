@@ -39,7 +39,7 @@ async def generate(request: Request) -> Response:
         messages = request_dict.pop("messages")
         functions = request_dict.pop("functions")
         prompt = input_prompt(messages)
-        request_dict.pop("prompt")
+        # request_dict.pop("prompt")
         api_info = APIInfo(messages, functions)
     else:
         prompt = request_dict.pop("prompt")

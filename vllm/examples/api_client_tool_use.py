@@ -32,7 +32,6 @@ def post_http_request(api_url: str,
         new_functions.append(function)
     functions = new_functions
     pload = {
-        "prompt": "",
         "n": n,
         "temperature": temperature,
         "max_tokens": max_tokens,
