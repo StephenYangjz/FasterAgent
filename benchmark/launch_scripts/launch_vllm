@@ -16,6 +16,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from vllm import EngineArgs, LLMEngine, SamplingParams
+from vllm.agents.utils import input_prompt, APIInfo
 import os
 os.environ["TRANSFORMERS_CACHE"] = '/data/cache'
 
@@ -30,6 +31,7 @@ class GenerationInputs:
     req_id: int
     prompt: str
     sampling_config: dict
+    api_info: APIInfo = None
 
 
 @dataclass
@@ -67,21 +69,23 @@ class ModelThread:
             gen_inputs = []
             while not self.input_queue.empty():
                 gen_input = self.input_queue.get_nowait()
-
                 prompt = gen_input.prompt
-                sampling_params = SamplingParams(
-                    n=1,
-                    # yeah, typo
-                    max_tokens=max(
-                        gen_input.sampling_config['reponse_len'], 1),
-                    ignore_eos=True,
-                )
+                if gen_input.api_info is not None:
+                    prompt = gen_input.prompt
+                    api_info = gen_input.api_info
+                else:
+                    prompt = gen_input.prompt
+                    api_info = None
+                sampling_params = SamplingParams(n=1, temperature=gen_input.sampling_config['temperature'], max_tokens=max(gen_input.sampling_config['reponse_len'], 1))
                 req_id = gen_input.req_id
-
+                print(f'add_request {req_id=} {prompt=}')
+                print(f'{sampling_params=}')
+                print(f'{api_info=}')
                 server.add_request(
-                    str(req_id),
-                    prompt,
-                    sampling_params,
+                    request_id=str(req_id),
+                    prompt=prompt,
+                    sampling_params=sampling_params,
+                    api_info=api_info,
                 )
 
             vllm_outputs = server.step()
@@ -146,11 +150,12 @@ class FastAPIServer:
         recv_from_model = 0
 
         for req_id in self.request_queue:
-            prompt, sampling_config = self.requests[req_id]
+            prompt, sampling_config, api_info = self.requests[req_id]
             gen_inputs = GenerationInputs(
                 req_id,
                 prompt,
                 sampling_config,
+                api_info,
             )
             self.model_thread.input_queue.put_nowait(gen_inputs)
             sent_to_model += 1
@@ -174,9 +179,9 @@ class FastAPIServer:
     async def is_ready(self):
         return self.model_ready_event.is_set()
 
-    def add_request(self, prompt, sampling_config):
+    def add_request(self, prompt, sampling_config, api_info=None):
         req_id = self.next_req_id
-        self.requests[req_id] = (prompt, sampling_config)
+        self.requests[req_id] = (prompt, sampling_config, api_info)
         self.request_queue.append(req_id)
 
         ready_event = asyncio.Event()
@@ -192,24 +197,68 @@ class FastAPIServer:
         del self.requests[req_id]
         return generation, num_output_tokens, error
 
-    async def generate(self, request_dict: Dict):
-        prompt = request_dict['inputs']
-        sampling_config = request_dict['parameters']
+    # async def generate(self, request_dict: Dict):
+    #     prompt = request_dict['inputs']
+    #     sampling_config = request_dict['parameters']
 
-        req_id = self.add_request(prompt, sampling_config)
+    #     req_id = self.add_request(prompt, sampling_config)
+    #     self.progress()
+    #     generation, num_output_tokens, error = await self.get_generation(req_id)
+
+    #     expected_resp_len = sampling_config['reponse_len']
+    #     # print(f'generate check_len: {num_output_tokens=} {expected_resp_len=}')
+    #     assert max(expected_resp_len, 1) == max(num_output_tokens,
+    #                                             1), f"{expected_resp_len=} {num_output_tokens=}"
+
+    #     return {
+    #         'generated_text': generation,
+    #         'num_output_tokens_cf': num_output_tokens,
+    #         'error': error,
+    #     }
+    async def generate(self, request_dict: Dict):
+        # Extracting parameters from the request_dict
+        n = request_dict.get('n')
+        temperature = request_dict.get('temperature')
+        # max_tokens = request_dict.get('max_tokens')
+        # stream = request_dict.get('stream')
+        messages = request_dict.get('messages')
+        functions = request_dict.get('functions')
+        parameters = request_dict.get('parameters')
+
+        # Validate required parameters
+        # if parameters is None or 'prompt_len' not in parameters or 'reponse_len' not in parameters:
+        #     raise ValueError("Missing required parameters in 'parameters'")
+
+        # prompt_len = parameters['prompt_len']
+        expected_response_len = parameters['reponse_len']
+
+        # Construct the prompt from messages or another source as required
+        prompt = input_prompt(messages)
+        api_info = APIInfo(messages, functions)
+
+        sampling_config = {
+            'n': n,
+            'temperature': temperature,
+            # 'max_tokens': max_tokens,
+            # 'stream': stream,
+            # 'prompt_len': prompt_len,
+            'reponse_len': expected_response_len,
+        }
+
+        # Use the extracted parameters for your processing
+        req_id = self.add_request(prompt, sampling_config, api_info)
         self.progress()
         generation, num_output_tokens, error = await self.get_generation(req_id)
 
-        expected_resp_len = sampling_config['reponse_len']
-        # print(f'generate check_len: {num_output_tokens=} {expected_resp_len=}')
-        assert max(expected_resp_len, 1) == max(num_output_tokens,
-                                                1), f"{expected_resp_len=} {num_output_tokens=}"
+        # Check the response length
+        assert max(expected_response_len, 1) == max(num_output_tokens, 1), f"{expected_response_len=} {num_output_tokens=}"
 
         return {
             'generated_text': generation,
             'num_output_tokens_cf': num_output_tokens,
             'error': error,
         }
+
 
 
 @app.post("/generate")
