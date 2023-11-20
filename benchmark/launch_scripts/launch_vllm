@@ -194,24 +194,6 @@ class FastAPIServer:
         del self.requests[req_id]
         return generation, num_output_tokens, error
 
-    # async def generate(self, request_dict: Dict):
-    #     prompt = request_dict['inputs']
-    #     sampling_config = request_dict['parameters']
-
-    #     req_id = self.add_request(prompt, sampling_config)
-    #     self.progress()
-    #     generation, num_output_tokens, error = await self.get_generation(req_id)
-
-    #     expected_resp_len = sampling_config['reponse_len']
-    #     # print(f'generate check_len: {num_output_tokens=} {expected_resp_len=}')
-    #     assert max(expected_resp_len, 1) == max(num_output_tokens,
-    #                                             1), f"{expected_resp_len=} {num_output_tokens=}"
-
-    #     return {
-    #         'generated_text': generation,
-    #         'num_output_tokens_cf': num_output_tokens,
-    #         'error': error,
-    #     }
     async def generate(self, request_dict: Dict):
         # Extracting parameters from the request_dict
         n = request_dict.get('n')
