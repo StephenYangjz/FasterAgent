@@ -3,6 +3,8 @@ from typing import Dict, List, Tuple
 import asyncio
 import time
 
+import logging
+
 class Function:
     def __init__(self, name: str, parameters: Dict, call_info: Dict) -> None:
         self.name = name
@@ -44,12 +46,16 @@ def output_parser(string):
     thought = [string[string.find("Thought: ") + len("Thought: "): string.find("\nAction: ")]]
     action = [string[string.find("Action: ") + len("Action: "): string.find("\nAction Input: ")]]
     action_input = [string[string.find("Action Input: ") + len("Action Input: "):]]
+    try:
+        arguments = eval(action_input[0])
+    except SyntaxError:
+        arguments = {}
     message = {
         "role": "assistant",
         "content": thought[0],
         "function_call": {
             "name": action[0],
-            "arguments": action_input[0]
+            "arguments": arguments
         }
     }
     return message
@@ -62,7 +68,15 @@ def get_api_call(output_text: str, api_info: APIInfo, prompt_len: str) -> Tuple[
     args_dict = parsed_message["function_call"]["arguments"]
     # TODO: check if we need function call
     call_api = (function_name != "Finish" and function_name in api_info.function_info)
-
+    if call_api:
+        # check if arguments are valid
+        function = api_info.function_info[function_name]
+        if not any (key in function.parameters["required"] for key in args_dict.keys()):
+            # use logger to record error
+            logging.error("Insufficient arguments")
+            logging.error(f"Function: {function_name}")
+            call_api = False
+            
     return call_api, function_name, args_dict
 
 class Task:
