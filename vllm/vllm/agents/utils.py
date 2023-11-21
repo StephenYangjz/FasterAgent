@@ -61,7 +61,7 @@ def get_api_call(output_text: str, api_info: APIInfo, prompt_len: str) -> Tuple[
     function_name = parsed_message["function_call"]["name"]
     args_dict = parsed_message["function_call"]["arguments"]
     # TODO: check if we need function call
-    call_api = function_name != "Finish"
+    call_api = (function_name != "Finish" and function_name in api_info.function_info)
 
     return call_api, function_name, args_dict
 

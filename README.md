@@ -7,6 +7,7 @@
 ## Usage
 vLLM with tool use:
 ```shell
+cd vllm
 # server
 python -m vllm.entrypoints.api_server --model /projects/bcby/qlao/ToolLLaMA-2-7b-v2
 # client
