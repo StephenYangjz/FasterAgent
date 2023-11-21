@@ -752,8 +752,11 @@ class LLMEngine:
             logger.info(seq.api_info.conversation_history[-2])
             logger.info(seq.api_info.conversation_history[-1])
         if should_call_api:
-            seq.api_info.task = call_api(seq.api_info.function_info[function_name], args_dict)
-            seq.status = SequenceStatus.API_BLOCKED
+            if function_name not in seq.api_info.function_info:
+                seq.status = SequenceStatus.FINISHED_STOPPED
+            else:
+                seq.api_info.task = call_api(seq.api_info.function_info[function_name], args_dict)
+                seq.status = SequenceStatus.API_BLOCKED
         return should_call_api
 
     def _run_workers(
