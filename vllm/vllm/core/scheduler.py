@@ -54,6 +54,9 @@ class SchedulerOutputs:
         # NOTE: We do not consider the ignored sequence groups.
         return (not self.scheduled_seq_groups and not self.blocks_to_swap_in
                 and not self.blocks_to_swap_out and not self.blocks_to_copy)
+    
+    def __str__(self) -> str:
+        return f"SchedulerOutputs: {self.scheduled_seq_groups}, {self.prompt_run}, {self.num_batched_tokens}, {self.blocks_to_swap_in}, {self.blocks_to_swap_out}, {self.blocks_to_copy}, {self.ignored_seq_groups}"
 
 
 class Scheduler:
