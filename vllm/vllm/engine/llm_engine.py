@@ -415,6 +415,11 @@ class LLMEngine:
             for parent_seq in parent_seqs
         }
         for sample in samples:
+            # if sample.parent_seq_id not in parent_child_dict:
+            #     parent_child_dict[sample.parent_seq_id] = []
+                # This parent sequence has finished and has been removed from
+                # the sequence group.
+                # continue
             parent_child_dict[sample.parent_seq_id].append(sample)
         # List of (child, parent)
         child_seqs: List[Tuple[Sequence, Sequence]] = []
@@ -520,7 +525,7 @@ class LLMEngine:
         running_child_seqs.sort(key=lambda x: x[0].get_beam_search_score(
             length_penalty=length_penalty,
             eos_token_id=self.tokenizer.eos_token_id),
-                                reverse=True)
+            reverse=True)
 
         # Check if we can stop the beam search.
         if len(running_child_seqs) == 0:
@@ -578,19 +583,20 @@ class LLMEngine:
             self, output: SamplerOutput,
             scheduler_outputs: SchedulerOutputs) -> List[RequestOutput]:
         # Update the scheduled sequence groups with the model outputs.
+
         scheduled_seq_groups = scheduler_outputs.scheduled_seq_groups
-        for seq_group, outputs in zip(scheduled_seq_groups, output):
+        new_scheduled_seq_groups = list(scheduled_seq_groups)
+        for seq_group, outputs in zip(new_scheduled_seq_groups, output):
             self._process_sequence_group_outputs(seq_group, outputs)
             seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
             if len(seqs) > 0:
                 self.scheduler.block(seq_group)
-
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
 
         # Create the outputs.
         request_outputs: List[RequestOutput] = []
-        for seq_group in (scheduled_seq_groups +
+        for seq_group in (new_scheduled_seq_groups +
                           scheduler_outputs.ignored_seq_groups):
             request_output = RequestOutput.from_seq_group(seq_group)
             request_outputs.append(request_output)
@@ -830,9 +836,7 @@ if __name__ == '__main__':
         last_message = full_string[len(input_prompt(message_history, functions)):]
         message = output_parser(last_message)
         return message
-    print('-'*20)
     extracted = extract(input_prompt(message_history, functions)+ string, message_history)
-    print(extracted)
 
     def function_caller(function_call, functions):
         # "function_call": {
