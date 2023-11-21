@@ -76,7 +76,7 @@ class ModelThread:
                 else:
                     prompt = gen_input.prompt
                     api_info = None
-                sampling_params = SamplingParams(n=1, temperature=gen_input.sampling_config['temperature'], max_tokens=max(gen_input.sampling_config['reponse_len'], 1))
+                sampling_params = SamplingParams(n=1, temperature=gen_input.sampling_config['temperature'], max_tokens=max(gen_input.sampling_config['reponse_len'], 1)) #, ignore_eos=False)
                 req_id = gen_input.req_id
                 server.add_request(
                     request_id=str(req_id),

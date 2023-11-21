@@ -15,6 +15,7 @@ import requests
 import sys
 import time
 import numpy as np
+import re
 from test_prompts import process_system_message, process_user_message
 from vllm.agents.utils import input_prompt
 
@@ -69,7 +70,7 @@ async def query_model_vllm(
     functions: List[dict] = None,
     responses: List[dict] = None,
     max_tokens: int = 256,
-    temperature: float = 0.3,
+    temperature: float = 0,
 ):
     prompt, prompt_len, expected_response_len = prompt
     
@@ -155,6 +156,14 @@ def get_tok_id_lens(tokenizer, batch):
     lens = [len(s) for s in tokenized["input_ids"]]
     return lens
 
+def remove_api_result(response):
+    # Define the pattern to be removed
+    pattern = r"Function: .+?\nAssistant:\n"
+    
+    # Use regular expression to replace the pattern with an empty string
+    cleaned_text = re.sub(pattern, '', response)
+
+    return cleaned_text
 
 def calculate_throughput(
     queries,
@@ -179,7 +188,7 @@ def calculate_throughput(
     for prompt, response in queries:
         if "generated_text" in response:
             prompts.append(prompt)
-            responses.append(response["generated_text"])
+            responses.append(remove_api_result(response["generated_text"]))
         if "naive_hf_lens" in response:
             naive_hf_lens.append(response["naive_hf_lens"])
         if "ray_gen_len" in response:
