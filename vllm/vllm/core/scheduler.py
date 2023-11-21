@@ -182,13 +182,9 @@ class Scheduler:
                 # If the number of batched tokens exceeds the limit, stop.
                 new_seq_lens = seq_lens + [num_prompt_tokens]
                 num_batched_tokens = len(new_seq_lens) * max(new_seq_lens)
-                # if (num_batched_tokens >
-                #         self.scheduler_config.max_num_batched_tokens):
-                #     print(new_seq_lens)
-                #     print(num_batched_tokens)
-                #     print(self.scheduler_config.max_num_batched_tokens)
-                #     print('------------------')
-                #     break
+                if (num_batched_tokens >
+                        self.scheduler_config.max_num_batched_tokens):
+                    break
 
                 # The total number of sequences in the RUNNING state should not
                 # exceed the maximum number of sequences.
