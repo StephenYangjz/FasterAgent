@@ -207,7 +207,7 @@ class Scheduler:
                 num_curr_seqs += num_new_seqs
                 scheduled.append(seq_group)
 
-            if scheduled or ignored_seq_groups:
+            if (scheduled or ignored_seq_groups) and seq_lens:
                 scheduler_outputs = SchedulerOutputs(
                     scheduled_seq_groups=scheduled,
                     prompt_run=True,
