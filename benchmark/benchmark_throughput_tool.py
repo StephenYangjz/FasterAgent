@@ -360,6 +360,7 @@ async def benchmark(
 
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
+    print(sorted(m._latencies))
 
     calculate_throughput(
         queries,
@@ -505,11 +506,12 @@ def main():
         assert args.random_prompt_count is not None
 
     backend = GenerationBackend[args.backend]
-    tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer") #ToolBench/ToolLLaMA-2-7b-v2")
+    tokenizer = AutoTokenizer.from_pretrained("ToolBench/ToolLLaMA-2-7b-v2") #hf-internal-testing/llama-tokenizer") #ToolBench/ToolLLaMA-2-7b-v2")
 
     if args.prompts_filename:
         prompts = load_prompts(args.prompts_filename)
         prompt_lens = itertools.repeat(-1)
+        # maybe calculate it
         num_prompts = len(prompts)
     elif args.gen_random_prompts:
         num_prompts = args.random_prompt_count
