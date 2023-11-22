@@ -181,10 +181,10 @@ def calculate_throughput(
     prompts = []
     responses = []
     naive_hf_lens = []
-    ft_lens = []
+    # ft_lens = []
     expected_response_lens = []
     ray_gen_lens = []
-    cf_gen_lens = []
+    # cf_gen_lens = []
     for prompt, response in queries:
         if "generated_text" in response:
             prompts.append(prompt)
@@ -193,8 +193,9 @@ def calculate_throughput(
             naive_hf_lens.append(response["naive_hf_lens"])
         if "ray_gen_len" in response:
             ray_gen_lens.append(response["ray_gen_len"])
-        if "num_output_tokens_cf" in response:
-            cf_gen_lens.append(response["num_output_tokens_cf"])
+        # if "num_output_tokens_cf" in response:
+        # removed due to incorrect calculation
+        #     cf_gen_lens.append(response["num_output_tokens_cf"])
 
         if "response_len" in response:
             expected_response_lens.append(response["response_len"])
@@ -205,7 +206,7 @@ def calculate_throughput(
         f"check_len actual {list(sorted(len(response) for response in response_ids))}"
     )
     print(f"check_len expect {list(sorted(expected_response_lens))}")
-    print(f"   self-reported {list(sorted(cf_gen_lens))}")
+    # print(f"   self-reported {list(sorted(cf_gen_lens))}")
 
     for prompt, response, expected_response_len in zip(prompt_ids, response_ids, expected_response_lens):
        print(f'check lens {len(prompt)=} {len(response)=} {expected_response_len=}')
@@ -222,7 +223,7 @@ def calculate_throughput(
     print(f"prompt_lens {list(sorted(prompt_lens))}")
     print(f"calc_throughput response_lens {list(sorted(response_lens))}")
     print(f"expected_response_lens {list(sorted(expected_response_lens))}")
-    print(f"ray_gen_lens {list(sorted(ray_gen_lens))}")
+    # print(f"ray_gen_lens {list(sorted(ray_gen_lens))}")
 
     prompt_token_count = sum(prompt_lens)
     response_token_count = sum(response_lens)
@@ -244,8 +245,8 @@ def calculate_throughput(
     if backend == GenerationBackend.FasterTransformer:
         response_token_count = sum(expected_response_lens)
 
-    if cf_gen_lens:
-        response_token_count = sum(cf_gen_lens)
+    # if cf_gen_lens:
+    #     response_token_count = sum(cf_gen_lens)
 
     # print(f'prompt_token_count {prompt_token_count} response_token_count {response_token_count}')
 
@@ -540,9 +541,9 @@ def main():
 
     for i, (prompt_len, gen_len) in enumerate(zip(prompt_lens, response_lens)):
         total = prompt_len + gen_len
-        if total > 2048:
+        if total > 8192:
             print(f"truncating long prompt+gen_len {prompt_len=} {gen_len=}")
-            gen_len = 2048 - prompt_len
+            gen_len = 8192 - prompt_len
         response_lens[i] = gen_len
 
     if args.print_generation_lens_and_exit:

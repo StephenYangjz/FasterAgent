@@ -119,6 +119,8 @@ for d in tqdm(data):
                 })
                 flag += 1
             break
+    if flag >= 50:
+        break
 
 # save to json
 with open('api_query_data.json', 'w') as f:
