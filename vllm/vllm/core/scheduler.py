@@ -124,7 +124,10 @@ class Scheduler:
         return self.waiting or self.running or self.swapped or self.blocked
 
     def get_num_unfinished_seq_groups(self) -> int:
-        return len(self.waiting) + len(self.running) + len(self.swapped)
+        return len(self.waiting) + len(self.running) + len(self.swapped) + len(self.blocked)
+
+    def get_str_unfinished_seq_groups(self) -> str:
+        return f"{len(self.waiting)=} {len(self.running)=} {len(self.swapped)=} {len(self.blocked)=}"
 
     def _schedule(self) -> SchedulerOutputs:
         # Blocks that need to be swaped or copied before model execution.
@@ -207,7 +210,7 @@ class Scheduler:
                 num_curr_seqs += num_new_seqs
                 scheduled.append(seq_group)
 
-            if (scheduled or ignored_seq_groups) and seq_lens:
+            if scheduled or ignored_seq_groups:
                 scheduler_outputs = SchedulerOutputs(
                     scheduled_seq_groups=scheduled,
                     prompt_run=True,
