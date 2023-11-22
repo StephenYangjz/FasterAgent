@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from ray.util.placement_group import PlacementGroup
 
 logger = init_logger(__name__)
+logger.setLevel("ERROR")
 
 _LOGGING_INTERVAL_SEC = 5
 
@@ -585,18 +586,21 @@ class LLMEngine:
         # Update the scheduled sequence groups with the model outputs.
 
         scheduled_seq_groups = scheduler_outputs.scheduled_seq_groups
-        new_scheduled_seq_groups = list(scheduled_seq_groups)
-        for seq_group, outputs in zip(new_scheduled_seq_groups, output):
+        # new_scheduled_seq_groups = list(scheduled_seq_groups)
+        to_block = []
+        for seq_group, outputs in zip(scheduled_seq_groups, output):
             self._process_sequence_group_outputs(seq_group, outputs)
             seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
             if len(seqs) > 0:
-                self.scheduler.block(seq_group)
+                to_block.append(seq_group)
+        for seq_group in to_block:
+            self.scheduler.block(seq_group)
         # Free the finished sequence groups.
         self.scheduler.free_finished_seq_groups()
 
         # Create the outputs.
         request_outputs: List[RequestOutput] = []
-        for seq_group in (new_scheduled_seq_groups +
+        for seq_group in (scheduled_seq_groups +
                           scheduler_outputs.ignored_seq_groups):
             request_output = RequestOutput.from_seq_group(seq_group)
             request_outputs.append(request_output)
