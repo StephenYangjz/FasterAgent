@@ -8,7 +8,7 @@
 1. Change ToolLlama's config (config.json) in `~/.cache/huggingface/hub/models--ToolBench--ToolLLaMA-2-7b-v2/snapshots`, change `max_position_embeddings` to 8192.
 2. `CUDA_VISIBLE_DEVICES=0 ./launch_scripts/launch_vllm --port=8000 --model=ToolBench/ToolLLaMA-2-7b-v2`
 3. Use ```bash
-   python benchmark_throughput_tool.py --backend='vLLM' --port=8000 --prompts_filename=../API/api_query_data.json --fixed_max_tokens=8192 --verbose
+   python benchmark_throughput_tool.py --backend='vLLM' --port=8000 --prompts_filename=../API/api_query_data.json --fixed_max_tokens=8192 --log_latencies --verbose
    ```
    instead of
    ```bash

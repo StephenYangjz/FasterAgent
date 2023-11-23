@@ -164,6 +164,8 @@ class Scheduler:
             # Optimization: We do not sort the waiting queue since the preempted
             # sequence groups are added to the front and the new sequence groups
             # are added to the back.
+            # by ZincCat: now we do
+            self.waiting = self.policy.sort_by_priority(now, self.waiting)
             while self.waiting:
                 seq_group = self.waiting[0]
 

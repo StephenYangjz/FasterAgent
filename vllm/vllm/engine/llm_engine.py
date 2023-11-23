@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from ray.util.placement_group import PlacementGroup
 
 logger = init_logger(__name__)
-logger.setLevel("ERROR")
+logger.setLevel("INFO")
 
 _LOGGING_INTERVAL_SEC = 5
 
@@ -753,8 +753,8 @@ class LLMEngine:
         if ((not sampling_params.ignore_eos)
                 and last_token == self.tokenizer.eos_token_id and seq.api_info):
             should_call_api, function_name, args_dict = get_api_call(seq.output_text, seq.api_info, len(seq.prompt))
-            logger.info(seq.api_info.conversation_history[-2])
-            logger.info(seq.api_info.conversation_history[-1])
+            # logger.info(seq.api_info.conversation_history[-2])
+            # logger.info(seq.api_info.conversation_history[-1])
         if should_call_api:
             if function_name not in seq.api_info.function_info:
                 seq.status = SequenceStatus.FINISHED_STOPPED

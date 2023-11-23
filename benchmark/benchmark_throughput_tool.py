@@ -255,8 +255,10 @@ def calculate_throughput(
 
     qps = len(responses) / dur_s
 
+    mean_e2e_latency = np.mean(all_e2e_latencies)
+
     with open(results_filename, "a") as f:
-        msg = f"backend {backend} dur_s {dur_s:.02f} tokens_per_s {throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}"
+        msg = f"backend {backend} dur_s {dur_s:.02f} tokens_per_s {throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}"
         if log_latencies:
             msg += f" {all_e2e_latencies=} {all_per_token_latencies=}"
         print(msg, file=f)
@@ -289,6 +291,7 @@ class MeasureLatency:
             # Do not record latency if request failed.
             if "generated_text" in output:
                 latency = time.time() - start
+                print(latency)
                 self._latencies.append(latency)
                 try:
                     self._per_token_latencies.append(latency / output["response_len"])
@@ -360,7 +363,7 @@ async def benchmark(
 
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
-    print(sorted(m._latencies))
+    # print(sorted(m._latencies))
 
     calculate_throughput(
         queries,
