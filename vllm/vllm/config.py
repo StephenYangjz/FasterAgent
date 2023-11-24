@@ -1,5 +1,5 @@
 from typing import Optional
-
+import enum
 import torch
 from transformers import PretrainedConfig
 
@@ -262,6 +262,19 @@ class ParallelConfig:
                 "Pipeline parallelism is not supported yet.")
 
 
+class PreemptionMode(enum.Enum):
+    """Preemption modes.
+
+    1. Swapping: Swap out the blocks of the preempted sequences to CPU memory
+    and swap them back in when the sequences are resumed.
+    2. Recomputation: Discard the blocks of the preempted sequences and
+    recompute them when the sequences are resumed, treating the sequences as
+    new prompts.
+    """
+    SWAP = enum.auto()
+    RECOMPUTE = enum.auto()
+
+
 class SchedulerConfig:
     """Scheduler configuration.
 
@@ -273,6 +286,7 @@ class SchedulerConfig:
         max_model_len: Maximum length of a sequence (including prompt
             and generated text).
         max_paddings: Maximum number of paddings to be added to a batch.
+        preemption_mode: Preemption modes.
     """
 
     def __init__(
@@ -281,6 +295,7 @@ class SchedulerConfig:
         max_num_seqs: int,
         max_model_len: int,
         max_paddings: int,
+        preemption_mode: Optional[PreemptionMode] = None,
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -291,6 +306,7 @@ class SchedulerConfig:
         self.max_num_seqs = max_num_seqs
         self.max_model_len = max_model_len
         self.max_paddings = max_paddings
+        self.preemption_mode = preemption_mode
         self._verify_args()
 
     def _verify_args(self) -> None:

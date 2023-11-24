@@ -443,6 +443,7 @@ class LLMEngine:
                 child = parent.fork(new_child_seq_id)
                 should_call_api = self._check_api_call(child, child_sample.output_token, seq_group.sampling_params)
                 if not should_call_api:
+                    self._mutate_output_token(child, child_sample)
                     child.append_token_id(child_sample.output_token,
                                         child_sample.logprobs)
                 child_seqs.append((child, parent))
@@ -452,6 +453,7 @@ class LLMEngine:
             last_child_sample = child_samples[-1]
             should_call_api = self._check_api_call(parent, last_child_sample.output_token, seq_group.sampling_params)
             if not should_call_api:
+                self._mutate_output_token(parent, last_child_sample)
                 parent.append_token_id(last_child_sample.output_token,
                                     last_child_sample.logprobs)
             child_seqs.append((parent, parent))
@@ -738,7 +740,7 @@ class LLMEngine:
             return
 
         # Check if the sequence has reached max_tokens.
-        if seq.get_output_len() == sampling_params.max_tokens:
+        if seq.get_output_len() >= sampling_params.max_tokens:
             seq.status = SequenceStatus.FINISHED_LENGTH_CAPPED
             return
 
@@ -762,6 +764,15 @@ class LLMEngine:
                 seq.api_info.task = call_api(seq.api_info.function_info[function_name], args_dict)
                 seq.status = SequenceStatus.API_BLOCKED
         return should_call_api
+
+    def _mutate_output_token(self, seq: Sequence, sample: SequenceOutputs):
+        if seq.api_info.response_next != -1:
+            sample.output_token = seq.api_info.response_tokens[seq.api_info.response_next]
+            sample.logprobs = {sample.output_token: 0}
+            seq.api_info.response_next += 1
+            if len(seq.api_info.response_tokens) <= seq.api_info.response_next:
+                seq.api_info.response_next = -1
+
 
     def _run_workers(
         self,

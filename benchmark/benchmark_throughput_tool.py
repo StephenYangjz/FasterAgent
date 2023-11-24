@@ -69,7 +69,7 @@ async def query_model_vllm(
     query: str = None,
     functions: List[dict] = None,
     responses: List[dict] = None,
-    max_tokens: int = 256,
+    max_tokens: int = 8192,
     temperature: float = 0,
 ):
     prompt, prompt_len, expected_response_len = prompt
@@ -321,6 +321,7 @@ async def benchmark(
     qps: float,
     log_latencies: bool,
     fail_on_response_failure: bool,
+    max_tokens: int,
 ):
     if backend == GenerationBackend.vLLM:
         query_model = query_model_vllm
@@ -355,6 +356,7 @@ async def benchmark(
                     allow_variable_generation_length,
                     total_requests,
                     port,
+                    max_tokens=max_tokens,
                 )
             )
         )
@@ -500,6 +502,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--allow_variable_generation_length", action="store_true")
     group.add_argument("--fixed_max_tokens", type=int, default=256)
+    group.add_argument("--max_tokens", type=int, default=8192)
 
     parser.add_argument("--print-generation-lens-and-exit", action="store_true")
 
@@ -582,6 +585,7 @@ def main():
             args.qps,
             args.log_latencies,
             args.fail_on_response_failure,
+            max_tokens=args.max_tokens,
         )
     )
 

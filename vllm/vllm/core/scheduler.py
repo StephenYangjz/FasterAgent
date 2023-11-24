@@ -1,8 +1,7 @@
-import enum
 import time
 from typing import Dict, Iterable, List, Optional, Tuple, Union, Any
 
-from vllm.config import CacheConfig, SchedulerConfig
+from vllm.config import CacheConfig, SchedulerConfig, PreemptionMode
 from vllm.core.block_manager import BlockSpaceManager
 from vllm.core.policy import PolicyFactory
 from vllm.logger import init_logger
@@ -13,19 +12,6 @@ from vllm.transformers_utils.tokenizer import detokenize_incrementally
 from vllm.sampling_params import SamplingParams
 
 logger = init_logger(__name__)
-
-
-class PreemptionMode(enum.Enum):
-    """Preemption modes.
-
-    1. Swapping: Swap out the blocks of the preempted sequences to CPU memory
-    and swap them back in when the sequences are resumed.
-    2. Recomputation: Discard the blocks of the preempted sequences and
-    recompute them when the sequences are resumed, treating the sequences as
-    new prompts.
-    """
-    SWAP = enum.auto()
-    RECOMPUTE = enum.auto()
 
 
 class SchedulerOutputs:
@@ -47,7 +33,7 @@ class SchedulerOutputs:
         self.blocks_to_swap_out = blocks_to_swap_out
         self.blocks_to_copy = blocks_to_copy
         # Swap in and swap out should never happen at the same time.
-        assert not (blocks_to_swap_in and blocks_to_swap_out)
+        # assert not (blocks_to_swap_in and blocks_to_swap_out)
         self.ignored_seq_groups = ignored_seq_groups
 
     def is_empty(self) -> bool:
@@ -429,6 +415,17 @@ class Scheduler:
         seq_group: SequenceGroup,
         preemption_mode: Optional[PreemptionMode] = None) -> None:
         self.blocked.remove(seq_group)
+
+        assert len(seq_group.get_seqs()) == 1
+        response_tokens = self.tokenizer.encode(input_prompt([seq_group.get_seqs()[0].api_info.task.result()]))
+        if len(response_tokens) + seq_group.get_seqs()[0].get_len() > self.prompt_limit:
+            preemption_mode = PreemptionMode.RECOMPUTE
+            seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+            for seq in seqs:
+                self.block_manager.free(seq)
+
+        if not preemption_mode and self.scheduler_config.preemption_mode:
+            preemption_mode = self.scheduler_config.preemption_mode
         preemption_mode = self.get_preemption_mode(seq_group, preemption_mode)
         if preemption_mode == PreemptionMode.RECOMPUTE:
             self._unblock_by_recompute(seq_group)
@@ -442,9 +439,11 @@ class Scheduler:
         preemption_mode: Optional[PreemptionMode] = None) -> None:
         self.blocked.append(seq_group)
         self.running.remove(seq_group)
-        seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
+        seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
         for seq in seqs:
-            seq.status = SequenceStatus.API_BLOCKED
+            seq.status = SequenceStatus.RUNNING
+        if not preemption_mode and self.scheduler_config.preemption_mode:
+            preemption_mode = self.scheduler_config.preemption_mode
         preemption_mode = self.get_preemption_mode(seq_group, preemption_mode)
         if preemption_mode == PreemptionMode.RECOMPUTE:
             self._block_by_recompute(seq_group)
@@ -452,12 +451,15 @@ class Scheduler:
             self._block_by_swap(seq_group, self.blocks_to_swap_out)
         else:
             assert False, "Invalid preemption mode."
+        seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
+        for seq in seqs:
+            seq.status = SequenceStatus.API_BLOCKED
 
     def _block_by_recompute(
         self,
         seq_group: SequenceGroup,
     ) -> None:
-        seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+        seqs = seq_group.get_seqs(status=SequenceStatus.RUNNING)
         assert len(seqs) == 1
         for seq in seqs:
             self.block_manager.free(seq)
@@ -499,10 +501,14 @@ class Scheduler:
         seq_group: SequenceGroup,
     ) -> None:
         for seq in seq_group.get_seqs(status=SequenceStatus.API_BLOCKED):
+            seq.api_info.conversation_history.append(seq.api_info.task.result())
+            seq.api_info.response_tokens = self.tokenizer.encode(input_prompt([seq.api_info.task.result()]))
+            seq.append_token_id(seq.api_info.response_tokens[0], {seq.api_info.response_tokens[0]: 0})
+            self._decode_sequence(seq, seq_group.sampling_params)
+            seq.api_info.response_next = 1 if len(seq.api_info.response_tokens) > 1 else -1
             seq.status = SequenceStatus.SWAPPED
         self.swapped.append(seq_group)
-        # TODO Deal with swap mode
-        raise NotImplementedError
+
 
     def get_preemption_mode(self, seq_group: SequenceGroup,
         preemption_mode: Optional[PreemptionMode] = None) -> PreemptionMode:

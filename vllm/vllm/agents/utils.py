@@ -21,6 +21,8 @@ class APIInfo:
         self.task = None
         for function in functions:
             self.function_info[function["name"]] = Function(function["name"], function["parameters"], function["call_info"])
+        self.response_tokens = None
+        self.response_next = -1
     
     def __str__(self) -> str:
         return f"Conversation History: {self.conversation_history}\nFunction Info: {self.function_info}"
@@ -49,6 +51,9 @@ def output_parser(string):
     try:
         arguments = eval(action_input[0])
     except SyntaxError:
+        arguments = {}
+    except Exception as e:
+        logging.error(f"{e}: {action_input[0]}")
         arguments = {}
     message = {
         "role": "assistant",

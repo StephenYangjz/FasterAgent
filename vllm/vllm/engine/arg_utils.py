@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
-
+                         SchedulerConfig, PreemptionMode)
 
 @dataclass
 class EngineArgs:
@@ -32,6 +31,7 @@ class EngineArgs:
     revision: Optional[str] = None
     tokenizer_revision: Optional[str] = None
     quantization: Optional[str] = None
+    preemption_mode: Optional[PreemptionMode] = None
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -171,6 +171,11 @@ class EngineArgs:
                             choices=['awq', 'squeezellm', None],
                             default=None,
                             help='Method used to quantize the weights')
+        parser.add_argument('--preemption-mode',
+                            type=lambda preemption_mode: PreemptionMode[preemption_mode],
+                            default=EngineArgs.preemption_mode,
+                            choices=list(PreemptionMode),
+                            help='preemption mode')
         return parser
 
     @classmethod
@@ -199,7 +204,8 @@ class EngineArgs:
         scheduler_config = SchedulerConfig(self.max_num_batched_tokens,
                                            self.max_num_seqs,
                                            model_config.max_model_len,
-                                           self.max_paddings)
+                                           self.max_paddings,
+                                           self.preemption_mode)
         return model_config, cache_config, parallel_config, scheduler_config
 
 
