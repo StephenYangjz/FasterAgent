@@ -296,6 +296,7 @@ class SchedulerConfig:
         max_model_len: int,
         max_paddings: int,
         preemption_mode: Optional[PreemptionMode] = None,
+        policy: Optional[str] = None,
     ) -> None:
         if max_num_batched_tokens is not None:
             self.max_num_batched_tokens = max_num_batched_tokens
@@ -307,6 +308,7 @@ class SchedulerConfig:
         self.max_model_len = max_model_len
         self.max_paddings = max_paddings
         self.preemption_mode = preemption_mode
+        self.policy = policy
         self._verify_args()
 
     def _verify_args(self) -> None:

@@ -32,6 +32,7 @@ class EngineArgs:
     tokenizer_revision: Optional[str] = None
     quantization: Optional[str] = None
     preemption_mode: Optional[PreemptionMode] = None
+    policy: str = 'fcfs'
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -176,6 +177,11 @@ class EngineArgs:
                             default=EngineArgs.preemption_mode,
                             choices=list(PreemptionMode),
                             help='preemption mode')
+        parser.add_argument('--policy',
+                            type=str,
+                            default='fcfs',
+                            choices=['fcfs', 'ls', 'las'],
+                            help='scheduling policy')
         return parser
 
     @classmethod
@@ -205,7 +211,8 @@ class EngineArgs:
                                            self.max_num_seqs,
                                            model_config.max_model_len,
                                            self.max_paddings,
-                                           self.preemption_mode)
+                                           self.preemption_mode,
+                                           self.policy)
         return model_config, cache_config, parallel_config, scheduler_config
 
 

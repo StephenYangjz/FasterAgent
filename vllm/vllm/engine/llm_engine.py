@@ -87,7 +87,8 @@ class LLMEngine:
             f"load_format={model_config.load_format}, "
             f"tensor_parallel_size={parallel_config.tensor_parallel_size}, "
             f"quantization={model_config.quantization}, "
-            f"seed={model_config.seed})")
+            f"seed={model_config.seed}",
+            f"policy={scheduler_config.policy}, ")
         # TODO(woosuk): Print more configs in debug mode.
 
         self.model_config = model_config
@@ -696,6 +697,7 @@ class LLMEngine:
                     f"Running: {len(self.scheduler.running)} reqs, "
                     f"Swapped: {len(self.scheduler.swapped)} reqs, "
                     f"Pending: {len(self.scheduler.waiting)} reqs, "
+                    f"Blocked: {len(self.scheduler.blocked)} reqs,"
                     f"GPU KV cache usage: {gpu_cache_usage * 100:.1f}%, "
                     f"CPU KV cache usage: {cpu_cache_usage * 100:.1f}%")
         self.last_logging_time = now
