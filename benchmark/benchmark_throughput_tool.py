@@ -177,6 +177,7 @@ def calculate_throughput(
     results_filename,
     log_latencies,
     fail_on_response_failure,
+    first_token_return_times,
 ):
     prompts = []
     responses = []
@@ -257,8 +258,11 @@ def calculate_throughput(
 
     mean_e2e_latency = np.mean(all_e2e_latencies)
 
+    mean_first_token_return_time = np.mean(first_token_return_times)
+    median_first_token_return_time = np.median(first_token_return_times)
+
     with open(results_filename, "a") as f:
-        msg = f"backend {backend} dur_s {dur_s:.02f} tokens_per_s {throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}"
+        msg = f"backend {backend} dur_s {dur_s:.02f} tokens_per_s {throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}, {mean_first_token_return_time=}, {median_first_token_return_time=}"
         if log_latencies:
             msg += f" {all_e2e_latencies=} {all_per_token_latencies=}"
         print(msg, file=f)
@@ -282,6 +286,7 @@ class MeasureLatency:
     def __init__(self):
         self._latencies = []
         self._per_token_latencies = []
+        self._first_token_return_times = []
 
     def measure(self, f):
         async def measured(*args, **kwargs):
@@ -291,8 +296,10 @@ class MeasureLatency:
             # Do not record latency if request failed.
             if "generated_text" in output:
                 latency = time.time() - start
-                print(latency)
+                first_token_return_time = output["first_token_return_time"] - start
+                print(latency, first_token_return_time)
                 self._latencies.append(latency)
+                self._first_token_return_times.append(first_token_return_time)
                 try:
                     self._per_token_latencies.append(latency / output["response_len"])
                 except ZeroDivisionError:
@@ -362,7 +369,6 @@ async def benchmark(
         )
     queries = await asyncio.gather(*tasks)
     dur_s = time.time() - start_time
-
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
     # print(sorted(m._latencies))
@@ -379,6 +385,7 @@ async def benchmark(
         results_filename,
         log_latencies,
         fail_on_response_failure,
+        m._first_token_return_times,
     )
     calculate_cdf(m._latencies)
 

@@ -40,6 +40,7 @@ class GenerationOutput:
     generated_text: str
     num_output_tokens: int
     error: str
+    first_token_return_time: float
 
 
 class ModelThread:
@@ -49,6 +50,8 @@ class ModelThread:
         self.thread = None
         self.input_queue = Queue()
         self.output_queue = Queue()
+
+        self.first_token_return_times = {}
 
         self.progress_call = progress_call
         self.loop = loop
@@ -62,7 +65,6 @@ class ModelThread:
         # tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
         self.model_ready_event.set()
-
         while True:
             time.sleep(0.01)
 
@@ -88,8 +90,12 @@ class ModelThread:
             vllm_outputs = server.step()
 
             needs_call_progress = False
+            
             for vllm_output in vllm_outputs:
                 if not vllm_output.finished:
+                    # print(f'Not finished {vllm_output.request_id}')
+                    if vllm_output.request_id not in self.first_token_return_times:
+                        self.first_token_return_times[vllm_output.request_id] = time.time()
                     continue
 
                 needs_call_progress = True
@@ -97,12 +103,15 @@ class ModelThread:
                 req_id = int(vllm_output.request_id)
                 generated_text = vllm_output.outputs[0].text
                 num_output_tokens = len(vllm_output.outputs[0].token_ids)
+                print(f'Generated {num_output_tokens} tokens for {req_id}')
+                first_token_return_time = self.first_token_return_times.get(req_id, None)
 
                 gen_output = GenerationOutput(
                     req_id=req_id,
                     generated_text=generated_text,
                     num_output_tokens=num_output_tokens,
                     error=None,
+                    first_token_return_time=first_token_return_time,
                 )
                 self.output_queue.put_nowait(gen_output)
 
@@ -168,7 +177,7 @@ class FastAPIServer:
             req_id = output.req_id
             ready_event, _, _, _ = self.generations[req_id]
             self.generations[req_id] = (
-                ready_event, output.generated_text, output.num_output_tokens, output.error)
+                ready_event, output.generated_text, output.num_output_tokens, output.error, output.first_token_return_time)
             ready_event.set()
 
         print(f'progress {sent_to_model=} {recv_from_model=}')
@@ -182,17 +191,19 @@ class FastAPIServer:
         self.request_queue.append(req_id)
 
         ready_event = asyncio.Event()
-        self.generations[req_id] = (ready_event, None, None, None)
+        self.generations[req_id] = (ready_event, None, None, None, None)
         return req_id
 
     async def get_generation(self, req_id):
-        ready_event, _, _, _ = self.generations[req_id]
+        ready_event, _, _, _, _ = self.generations[req_id]
         await ready_event.wait()
-        _, generation, num_output_tokens, error = self.generations[req_id]
+        _, generation, num_output_tokens, error, first_token_return_time = self.generations[req_id]
 
         del self.generations[req_id]
         del self.requests[req_id]
-        return generation, num_output_tokens, error
+        # del self.first_token_return_times[req_id]
+        print(f'get_generation {req_id=} {generation=}')
+        return generation, num_output_tokens, error, first_token_return_time
 
     async def generate(self, request_dict: Dict):
         # Extracting parameters from the request_dict
@@ -227,7 +238,7 @@ class FastAPIServer:
         # Use the extracted parameters for your processing
         req_id = self.add_request(prompt, sampling_config, api_info)
         self.progress()
-        generation, num_output_tokens, error = await self.get_generation(req_id)
+        generation, num_output_tokens, error, first_token_return_time = await self.get_generation(req_id)
 
         # Check the response length
         # assert max(expected_response_len, 1) == max(num_output_tokens, 1), f"{expected_response_len=} {num_output_tokens=}"
@@ -235,6 +246,7 @@ class FastAPIServer:
         return {
             'generated_text': generation,
             'num_output_tokens_cf': num_output_tokens,
+            'first_token_return_time': first_token_return_time,
             'error': error,
         }
 
