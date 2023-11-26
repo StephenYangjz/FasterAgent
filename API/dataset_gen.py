@@ -61,7 +61,7 @@ def get_responses(filepath='api_response_data.csv'):
 
 response_dict = get_responses()
 
-toolbench_datasetpath = '/home/zinccat/datasets/data/data/toolllama_G123_dfs_eval.json'
+toolbench_datasetpath = '../train.json'
 with open(toolbench_datasetpath, mode='r') as file:
     json_data = file.read()
 data = json.loads(json_data)
