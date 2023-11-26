@@ -2,8 +2,11 @@ from vllm.agents.misc import get_conv_template
 from typing import Dict, List, Tuple
 import asyncio
 import time
-
+import torch
 import logging
+
+seed_value = 42
+torch.manual_seed(seed_value)
 
 class Function:
     def __init__(self, name: str, parameters: Dict, call_info: Dict) -> None:
@@ -94,8 +97,9 @@ class Task:
 
 
 class Timer(Task):
-    def __init__(self, delay: int, response: Dict):
-        self.done_time = delay / 1000 + time.monotonic()
+    print("xxx")
+    def __init__(self, delay: int, response: Dict, std = 0.1):
+        self.done_time = delay / 1000 + time.monotonic() + torch.normal(mean=torch.Tensor([0.0]), std=torch.Tensor([std]))[0]
         self.response = response
     def done(self):
         return self.done_time <= time.monotonic()

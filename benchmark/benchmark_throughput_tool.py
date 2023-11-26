@@ -20,6 +20,9 @@ from test_prompts import process_system_message, process_user_message
 from vllm.agents.utils import input_prompt
 
 
+seed_value = 42
+np.random.seed(seed_value)
+
 def get_wait_time(mean_time_between_requests: float, distribution: str) -> float:
     if distribution == "uniform":
         return mean_time_between_requests

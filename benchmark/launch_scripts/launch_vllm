@@ -22,6 +22,8 @@ os.environ["TRANSFORMERS_CACHE"] = '/data/cache'
 
 assert 'CUDA_VISIBLE_DEVICES' in os.environ, "Set CUDA_VISIBLE_DEVICES, else this will take memory on each (and load model to 0)"
 
+seed_value = 42
+torch.manual_seed(seed_value)
 
 app = FastAPI()
 
