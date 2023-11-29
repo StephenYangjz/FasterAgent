@@ -4,6 +4,8 @@ import csv
 import json
 import re
 from tqdm import tqdm
+import ast
+import random
 
 FORMAT_INSTRUCTIONS_SYSTEM_FUNCTION = """You are AutoGPT, you can use many tools(functions) to do the following task.
 First I will give you the task description, and your task start.
@@ -50,9 +52,10 @@ def get_responses(filepath='api_response_data.csv'):
             #         "content": row["Responses"]
             #     }
             # }
+            responses = ast.literal_eval(row["Responses"])
             response = {
                 "time": int(row["Delay"]),
-                "content": row["Responses"]
+                "content": responses
             }
             responses_dict[name] = response
 
@@ -103,7 +106,7 @@ for d in tqdm(data):
                     break
                 else:
                     times[tool] = response_dict[tool]['time']
-                    responses[tool] = response_dict[tool]['content']
+                    responses[tool] = random.choice(response_dict[tool]['content'])
 
         if message.get('from') == 'user':
             user_prompt = message.get('value')
@@ -121,7 +124,7 @@ for d in tqdm(data):
             break
     if flag >= 50:
         break
-
+random.shuffle(query)
 # save to json
 with open('api_query_data.json', 'w') as f:
     json.dump(query, f)
