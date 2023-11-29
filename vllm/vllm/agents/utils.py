@@ -79,11 +79,13 @@ def get_api_call(output_text: str, api_info: APIInfo, prompt_len: str) -> Tuple[
     if call_api:
         # check if arguments are valid
         function = api_info.function_info[function_name]
-        if function.parameters["required"] and not any (key in args_dict.keys() for key in function.parameters["required"]):
-            # use logger to record error
-            logging.error("Insufficient arguments")
-            logging.error(f"Function: {function_name}")
-            call_api = False
+        # TODO: check if we need to check required arguments
+        # Deleted for now to make distribution more aligned
+        # if function.parameters["required"] and not any (key in args_dict.keys() for key in function.parameters["required"]):
+        #     # use logger to record error
+        #     logging.error("Insufficient arguments")
+        #     logging.error(f"Function: {function_name}")
+        #     call_api = False
             
     return call_api, function_name, args_dict
 
