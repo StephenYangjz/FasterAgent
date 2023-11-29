@@ -10,7 +10,7 @@ import asyncio
 import itertools
 import json
 import os
-import random
+# import random
 import requests
 import sys
 import time
@@ -394,17 +394,17 @@ def gen_random_response_lens(distribution: str, len_mean, len_range, num_prompts
         low = len_mean - (len_range // 2)
         high = len_mean + (len_range // 2)
         num_to_generate = list(
-            map(lambda _: random.randint(low, high), range(num_prompts))
+            map(lambda _: np.random.randint(low, high), range(num_prompts))
         )
         return num_to_generate
     elif distribution == "exponential":
-        np.random.seed(random.randint(0, 1e6))
+        # np.random.seed(random.randint(0, 1e6))
         return [
             min(round(s), len_range)
             for s in np.random.exponential(scale=len_mean, size=num_prompts)
         ]
     elif distribution == "capped_exponential":
-        np.random.seed(random.randint(0, 1e6))
+        # np.random.seed(random.randint(0, 1e6))
         response_lens = []
         while len(response_lens) < num_prompts:
             sample = round(np.random.exponential(scale=len_mean))
@@ -432,9 +432,9 @@ def gen_random_prompts_return_lens(
     vocab_ids = list(set(tokenizer.get_vocab().values()) - set(vocab_ids_to_exclude))
 
     def gen_prompt_ids(length):
-        return [random.randint(10, 50000) for _ in range(length)]
+        return [np.random.randint(10, 50000) for _ in range(length)]
 
-    prompt_lens = list(map(lambda _: random.randint(low, high), range(num_prompts)))
+    prompt_lens = list(map(lambda _: np.random.randint(low, high), range(num_prompts)))
     prompts_as_ids = list(
         map(lambda prompt_len: gen_prompt_ids(prompt_len), prompt_lens)
     )
