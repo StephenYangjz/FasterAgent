@@ -141,6 +141,17 @@ if nvcc_cuda_version >= Version("11.2"):
 
 ext_modules = []
 
+# Cache operations.
+cache_extension = CUDAExtension(
+    name="vllm.cache_ops",
+    sources=["csrc/cache.cpp", "csrc/cache_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(cache_extension)
+
 # Attention kernels.
 attention_extension = CUDAExtension(
     name="vllm.attention_ops",
@@ -152,6 +163,65 @@ attention_extension = CUDAExtension(
     },
 )
 ext_modules.append(attention_extension)
+
+# Positional encoding kernels.
+positional_encoding_extension = CUDAExtension(
+    name="vllm.pos_encoding_ops",
+    sources=["csrc/pos_encoding.cpp", "csrc/pos_encoding_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(positional_encoding_extension)
+
+# Layer normalization kernels.
+layernorm_extension = CUDAExtension(
+    name="vllm.layernorm_ops",
+    sources=["csrc/layernorm.cpp", "csrc/layernorm_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(layernorm_extension)
+
+# Activation kernels.
+activation_extension = CUDAExtension(
+    name="vllm.activation_ops",
+    sources=["csrc/activation.cpp", "csrc/activation_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(activation_extension)
+
+# Quantization kernels.
+quantization_extension = CUDAExtension(
+    name="vllm.quantization_ops",
+    sources=[
+        "csrc/quantization.cpp",
+        "csrc/quantization/awq/gemm_kernels.cu",
+        "csrc/quantization/squeezellm/quant_cuda_kernel.cu",
+    ],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(quantization_extension)
+
+# Misc. CUDA utils.
+cuda_utils_extension = CUDAExtension(
+    name="vllm.cuda_utils",
+    sources=["csrc/cuda_utils.cpp", "csrc/cuda_utils_kernels.cu"],
+    extra_compile_args={
+        "cxx": CXX_FLAGS,
+        "nvcc": NVCC_FLAGS,
+    },
+)
+ext_modules.append(cuda_utils_extension)
 
 
 def get_path(*filepath) -> str:
@@ -203,6 +273,7 @@ setuptools.setup(
     license="Apache 2.0",
     description=("A high-throughput and memory-efficient inference and "
                  "serving engine for LLMs"),
+    long_description=read_readme(),
     long_description_content_type="text/markdown",
     url="https://github.com/vllm-project/vllm",
     project_urls={
@@ -220,7 +291,7 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=("benchmarks", "csrc", "docs",
                                                "examples", "tests")),
     python_requires=">=3.8",
-    install_requires="",
+    install_requires=get_requirements(),
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExtension},
     package_data={"vllm": ["py.typed"]},

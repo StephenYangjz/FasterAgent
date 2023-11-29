@@ -128,7 +128,7 @@ async def query_model_vllm(
         }
 
         if verbose:
-            print("Querying model")
+            print("Querying model", len(system_message))
         async with session.post(
             f"http://localhost:{port}/generate", json=generate_input, headers=headers
         ) as resp:

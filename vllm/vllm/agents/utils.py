@@ -4,6 +4,7 @@ import asyncio
 import time
 import torch
 import logging
+from transformers import AutoTokenizer
 
 seed_value = 42
 torch.manual_seed(seed_value)
@@ -13,8 +14,9 @@ class Function:
         self.name = name
         self.parameters = parameters
         self.call_info = call_info
-        print(tokenizer.batch_encode_plus([self.call_info["response"]])["input_ids"])
-        self.call_info["len"] = len(tokenizer.batch_encode_plus([self.call_info["response"]])["input_ids"][0])
+        tokenizer = AutoTokenizer.from_pretrained("ToolBench/ToolLLaMA-2-7b-v2") #hf-internal-testing/llama-tokenizer") #ToolBench/ToolLLaMA-2-7b-v2")
+        tokenized = tokenizer.encode_plus(self.call_info["response"]["content"])
+        self.call_info["response_len"] = len(tokenized["input_ids"])
 
     def __str__(self) -> str:
         return f"Function: {self.name}\nParameters: {self.parameters}\nCall Info: {self.call_info}"
