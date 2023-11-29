@@ -180,7 +180,7 @@ class EngineArgs:
         parser.add_argument('--policy',
                             type=str,
                             default='fcfs',
-                            choices=['fcfs', 'ls', 'las'],
+                            choices=['fcfs', 'ls', 'las', 'els', 'els2'],
                             help='scheduling policy')
         return parser
 
