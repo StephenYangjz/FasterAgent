@@ -13,6 +13,8 @@ class Function:
         self.name = name
         self.parameters = parameters
         self.call_info = call_info
+        print(tokenizer.batch_encode_plus([self.call_info["response"]])["input_ids"])
+        self.call_info["len"] = len(tokenizer.batch_encode_plus([self.call_info["response"]])["input_ids"][0])
 
     def __str__(self) -> str:
         return f"Function: {self.name}\nParameters: {self.parameters}\nCall Info: {self.call_info}"
