@@ -177,6 +177,28 @@ class Estimation(Policy):
         # print(total_time, generation_time, prefilling_time, estimated_api_time)
         return -total_time
 
+class Estimation2(Policy):
+    def get_priority(
+        self,
+        now: float,
+        seq_group: SequenceGroup,
+    ) -> float:
+        api_info = seq_group.seqs_dict[next(iter(seq_group.seqs_dict))].api_info
+        call_times = [api.call_info['time'] for api in api_info.function_info.values()]
+        prompt_length = len(seq_group.seqs_dict[next(iter(seq_group.seqs_dict))].prompt)
+        done_api_calls = (len(api_info.conversation_history) - 2) / 2
+        all_api_calls = 0.0738 * len(api_info.function_info) + 1.69
+        estimated_api_calls = all_api_calls - done_api_calls
+        average_call_time = sum(call_times) / len(call_times) / 1000
+        estimated_api_time = estimated_api_calls * average_call_time
+        generation_length = estimated_api_calls * 71 + 60 # * (done_api_calls == 0)
+        generation_time = generation_length * 1.46440962e-02 + 2.45917548e-05 * prompt_length * generation_length -0.36915662 # r^2 = 0.93
+        prefilling_time = (8e-5 * prompt_length + 8e-3) * estimated_api_calls + 4e-5 * 71 * estimated_api_calls * (estimated_api_calls + 1)
+        # Todo: consider API length
+        total_time = generation_time + prefilling_time + estimated_api_time
+        # print(total_time, generation_time, prefilling_time, estimated_api_time)
+        return -total_time
+
 
 
 
@@ -191,6 +213,7 @@ class PolicyFactory:
         'toolnum': ToolNum,
         'toolnum2': ToolNum2,
         "est": Estimation,
+        "est2": Estimation2
     }
 
     @classmethod
