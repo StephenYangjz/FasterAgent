@@ -9,12 +9,13 @@ from transformers import AutoTokenizer
 seed_value = 42
 torch.manual_seed(seed_value)
 
+tokenizer = AutoTokenizer.from_pretrained("ToolBench/ToolLLaMA-2-7b-v2") #hf-internal-testing/llama-tokenizer") #ToolBench/ToolLLaMA-2-7b-v2")
+
 class Function:
     def __init__(self, name: str, parameters: Dict, call_info: Dict) -> None:
         self.name = name
         self.parameters = parameters
         self.call_info = call_info
-        tokenizer = AutoTokenizer.from_pretrained("ToolBench/ToolLLaMA-2-7b-v2") #hf-internal-testing/llama-tokenizer") #ToolBench/ToolLLaMA-2-7b-v2")
         tokenized = tokenizer.encode_plus(self.call_info["response"]["content"])
         self.call_info["response_len"] = len(tokenized["input_ids"])
 
