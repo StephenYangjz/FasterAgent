@@ -180,6 +180,7 @@ def calculate_throughput(
     results_filename,
     log_latencies,
     fail_on_response_failure,
+    all_start_times = None
 ):
     prompts = []
     responses = []
@@ -253,15 +254,21 @@ def calculate_throughput(
 
     # print(f'prompt_token_count {prompt_token_count} response_token_count {response_token_count}')
 
-    throughput_tok_s = (prompt_token_count + response_token_count) / dur_s
+    old_throughput_tok_s = (prompt_token_count + response_token_count) / dur_s
     # print(f'throughput_tok_s {throughput_tok_s:.02f}')
 
+    mid_time = all_start_times[-20] - all_start_times[20] + all_e2e_latencies[-20]
+    all_tokens = 0
+    for i in range(100):
+        if all_start_times[i] + all_e2e_latencies[i] > all_start_times[-20] + all_e2e_latencies[-20]:
+            all_tokens += prompt_lens[i] + response_lens[i]
+    throughput_tok_s = all_tokens / mid_time
     qps = len(responses) / dur_s
 
     mean_e2e_latency = np.mean(all_e2e_latencies)
 
     with open(results_filename, "a") as f:
-        msg = f"backend {backend} dur_s {dur_s:.02f} tokens_per_s {throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}"
+        msg = f"backend {backend} dur_s {dur_s:.02f} real_throughput {throughput_tok_s:.02f} tokens_per_s {old_throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}"
         if log_latencies:
             msg += f" {all_e2e_latencies=} {all_per_token_latencies=}"
         print(msg, file=f)
@@ -285,10 +292,12 @@ class MeasureLatency:
     def __init__(self):
         self._latencies = []
         self._per_token_latencies = []
+        self._start_time = []
 
     def measure(self, f):
         async def measured(*args, **kwargs):
             start = time.time()
+            self._start_time.append(start)
             prompt, output = await f(*args, **kwargs)
 
             # Do not record latency if request failed.
@@ -368,6 +377,7 @@ async def benchmark(
 
     median_token_latency = np.median(m._per_token_latencies)
     median_e2e_latency = np.median(m._latencies)
+    all_start_times = np.array(m._start_time)
     # print(sorted(m._latencies))
 
     calculate_throughput(
@@ -382,6 +392,7 @@ async def benchmark(
         results_filename,
         log_latencies,
         fail_on_response_failure,
+        all_start_times
     )
     calculate_cdf(m._latencies)
 

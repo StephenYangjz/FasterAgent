@@ -224,7 +224,7 @@ class PolicyFactory:
         'toolnum': ToolNum,
         'toolnum2': ToolNum2,
         "est": Estimation,
-        "est2": Estimation2
+        "est2": Estimation2,
         "est3": Estimation3
 
     }

@@ -64,7 +64,7 @@ def get_responses(filepath='api_response_data.csv'):
 
 response_dict = get_responses()
 
-toolbench_datasetpath = '../train.json'
+toolbench_datasetpath = '/home/zinccat/datasets/data/data/toolllama_G123_dfs_eval.json'
 with open(toolbench_datasetpath, mode='r') as file:
     json_data = file.read()
 data = json.loads(json_data)
@@ -77,6 +77,8 @@ pattern = r'for tool \"([^\"]+)\"'
 flag = 0
 
 query = []
+
+random.shuffle(data)
 
 for d in tqdm(data):
     legal = True
@@ -122,9 +124,9 @@ for d in tqdm(data):
                 })
                 flag += 1
             break
-    if flag >= 50:
+    if flag >= 100:
         break
-random.shuffle(query)
+
 # save to json
 with open('api_query_data.json', 'w') as f:
     json.dump(query, f)
