@@ -33,7 +33,7 @@ class SchedulerOutputs:
         self.blocks_to_swap_out = blocks_to_swap_out
         self.blocks_to_copy = blocks_to_copy
         # Swap in and swap out should never happen at the same time.
-        # assert not (blocks_to_swap_in and blocks_to_swap_out)
+        assert not (blocks_to_swap_in and blocks_to_swap_out)
         self.ignored_seq_groups = ignored_seq_groups
 
     def is_empty(self) -> bool:
@@ -241,7 +241,7 @@ class Scheduler:
 
         # Swap in the sequence groups in the SWAPPED state if possible.
         self.swapped = self.policy.sort_by_priority(now, self.swapped)
-        if not preempted:
+        if not preempted and not blocks_to_swap_out:
             num_curr_seqs = sum(seq_group.get_max_num_running_seqs()
                                 for seq_group in self.running)
 
