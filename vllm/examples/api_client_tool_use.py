@@ -69,7 +69,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--n", type=int, default=1)
     # parser.add_argument("--prompt", type=str, default="San Francisco is a")
     parser.add_argument("--stream", action="store_true")
@@ -167,7 +167,9 @@ if __name__ == "__main__":
         }
     }, {
         "time": 0,
-        "response": {}
+        "response": {
+            "content": ""
+        }
     }]
 
     api_url = f"http://{args.host}:{args.port}/generate"
