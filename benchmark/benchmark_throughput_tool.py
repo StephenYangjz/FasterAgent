@@ -141,7 +141,7 @@ async def query_model_vllm(
             if verbose and "generated_text" in output:
                 print(json.dumps(output["generated_text"]))
 
-            return (input_prompt(messages), output)
+            return (input_prompt(messages), output, prompt)
 
 
 def load_prompts(prompt_file):
@@ -293,17 +293,20 @@ class MeasureLatency:
         self._latencies = []
         self._per_token_latencies = []
         self._start_time = []
+        self.new_prompts = []
 
     def measure(self, f):
         async def measured(*args, **kwargs):
             start = time.time()
             self._start_time.append(start)
-            prompt, output = await f(*args, **kwargs)
+            prompt, output, ori_prompt = await f(*args, **kwargs)
 
             # Do not record latency if request failed.
             if "generated_text" in output:
                 latency = time.time() - start
-                print(latency)
+                print(ori_prompt)
+                ori_prompt['times']['total'] = latency
+                self.new_prompts.append(ori_prompt)
                 self._latencies.append(latency)
                 try:
                     self._per_token_latencies.append(latency / output["response_len"])
@@ -314,6 +317,10 @@ class MeasureLatency:
             return prompt, output
 
         return measured
+    
+    def save_prompts(self, results_filename='../API/api_query_data_with_time.json'):
+        with open(results_filename, "a") as f:
+            json.dump(self.new_prompts, f)
 
 
 def get_token_ids(input_str, tokenizer):
@@ -395,6 +402,7 @@ async def benchmark(
         all_start_times
     )
     calculate_cdf(m._latencies)
+    # m.save_prompts()
 
 
 def gen_random_response_lens(distribution: str, len_mean, len_range, num_prompts):
