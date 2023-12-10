@@ -31,6 +31,7 @@ class APIInfo:
             self.function_info[function["name"]] = Function(function["name"], function["parameters"], function["call_info"])
         self.response_tokens = None
         self.response_next = -1
+        self.has_get_response = True
     
     def __str__(self) -> str:
         return f"Conversation History: {self.conversation_history}\nFunction Info: {self.function_info}"
