@@ -610,7 +610,7 @@ class LLMEngine:
 
         if self.log_stats:
             # Log the system stats.
-            self._log_system_stats(scheduler_outputs.prompt_run,
+            self._log_system_stats(scheduler_outputs.run_mode,
                                    scheduler_outputs.num_batched_tokens)
         return request_outputs
 
@@ -640,12 +640,12 @@ class LLMEngine:
 
     def _log_system_stats(
         self,
-        prompt_run: bool,
+        run_mode: int,
         num_batched_tokens: int,
     ) -> None:
         now = time.monotonic()
         # Log the number of batched input tokens.
-        if prompt_run:
+        if run_mode != 0:
             self.num_prompt_tokens.append((now, num_batched_tokens))
         else:
             self.num_generation_tokens.append((now, num_batched_tokens))

@@ -159,6 +159,41 @@ class BlockSpaceManager:
             self.gpu_allocator.free(last_block)
             return last_block.block_number, new_block.block_number
 
+    def append_slots(self, seq: Sequence) -> Optional[Tuple[int, int]]:
+        """Allocate a physical slot for a new token."""
+        logical_blocks = seq.logical_token_blocks
+        block_table = self.block_tables[seq.seq_id]
+
+        need_sliding_window_process = False
+        while len(block_table) < len(logical_blocks):
+            if (self.block_sliding_window
+                    and len(block_table) >= self.block_sliding_window):
+                # re-use a block
+                block_table.append(block_table[len(block_table) %
+                                               self.block_sliding_window])
+                need_sliding_window_process = True
+            else:
+                # The sequence has a new logical block.
+                # Allocate a new physical block.
+                block = self.gpu_allocator.allocate()
+                block_table.append(block)
+        if (not need_sliding_window_process):
+            return None
+
+        # We want to append the token to the last physical block.
+        last_block = block_table[-1]
+        assert last_block.device == Device.GPU
+        if last_block.ref_count == 1:
+            # Not shared with other sequences. Appendable.
+            return None
+        else:
+            # The last block is shared with other sequences.
+            # Copy on Write: Allocate a new block and copy the tokens.
+            new_block = self.gpu_allocator.allocate()
+            block_table[-1] = new_block
+            self.gpu_allocator.free(last_block)
+            return last_block.block_number, new_block.block_number
+
     def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:
         # NOTE: fork does not allocate a new physical block.
         # Thus, it is always safe from OOM.

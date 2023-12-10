@@ -19,7 +19,7 @@ class SchedulerOutputs:
     def __init__(
         self,
         scheduled_seq_groups: List[SequenceGroup],
-        prompt_run: bool,
+        run_mode: int, # 0 generation, 1 prompt, 2 cross
         num_batched_tokens: int,
         blocks_to_swap_in: Dict[int, int],
         blocks_to_swap_out: Dict[int, int],
@@ -27,7 +27,7 @@ class SchedulerOutputs:
         ignored_seq_groups: List[SequenceGroup],
     ) -> None:
         self.scheduled_seq_groups = scheduled_seq_groups
-        self.prompt_run = prompt_run
+        self.run_mode = run_mode
         self.num_batched_tokens = num_batched_tokens
         self.blocks_to_swap_in = blocks_to_swap_in
         self.blocks_to_swap_out = blocks_to_swap_out
@@ -40,9 +40,9 @@ class SchedulerOutputs:
         # NOTE: We do not consider the ignored sequence groups.
         return (not self.scheduled_seq_groups and not self.blocks_to_swap_in
                 and not self.blocks_to_swap_out and not self.blocks_to_copy)
-    
+
     def __str__(self) -> str:
-        return f"SchedulerOutputs: {self.scheduled_seq_groups}, {self.prompt_run}, {self.num_batched_tokens}, {self.blocks_to_swap_in}, {self.blocks_to_swap_out}, {self.blocks_to_copy}, {self.ignored_seq_groups}"
+        return f"SchedulerOutputs: {self.scheduled_seq_groups}, {self.run_mode}, {self.num_batched_tokens}, {self.blocks_to_swap_in}, {self.blocks_to_swap_out}, {self.blocks_to_copy}, {self.ignored_seq_groups}"
 
 
 class Scheduler:
@@ -60,7 +60,8 @@ class Scheduler:
                                 self.scheduler_config.max_num_batched_tokens)
 
         # Instantiate the scheduling policy.
-        self.policy = PolicyFactory.get_policy(policy_name=scheduler_config.policy)
+        self.policy = PolicyFactory.get_policy(
+            policy_name=scheduler_config.policy)
         # Create the block space manager.
         self.block_manager = BlockSpaceManager(
             block_size=self.cache_config.block_size,
@@ -127,15 +128,98 @@ class Scheduler:
         # Fix the current time.
         now = time.monotonic()
 
-        for seq_group in list(self.blocked):
-            seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
-            assert len(seqs) == 1
-            ready_num = 0
-            for seq in seqs:
-                if seq.api_info.task.done():
-                    ready_num += 1
-            if ready_num == len(seqs):
-                self.unblock(seq_group)
+        # Move from blocked to waiting/running/swapped according to the configurations of scheduler.
+        if self.blocked and not blocks_to_swap_out:
+            ignored_seq_groups: List[SequenceGroup] = []
+            scheduled: List[SequenceGroup] = []
+            num_curr_seqs = sum(seq_group.get_max_num_running_seqs()
+                                for seq_group in self.running)
+            seq_lens: List[int] = []
+            for seq_group in list(self.blocked):
+                seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
+                assert len(seqs) == 1
+                ready_num = 0
+                for seq in seqs:
+                    if seq.api_info.task.done():
+                        ready_num += 1
+                if ready_num == len(seqs):
+                    if self.scheduler_config.use_cross:
+                        assert self.scheduler_config.preemption_mode == PreemptionMode.SWAP
+                        assert seq_group.num_seqs() == 1, (
+                            "Now we only support blocked sequence group which have only one sequence.")
+                        # raise NotImplementedError
+                        # Do not sort blocked queue for now.
+                        response_tokens = 0
+                        for seq in seq_group.get_seqs():
+                            seq.api_info.conversation_history.append(
+                            seq.api_info.task.result())
+                            response_tokens = self.tokenizer.encode(
+                            input_prompt([seq.api_info.task.result()]))
+                            seq.set_response_token_ids(response_tokens)
+                            for token_id in response_tokens:
+                                seq.append_token_id(token_id, {token_id: 0})
+                                self._decode_sequence(seq, seq_group.sampling_params)
+                        num_cross_tokens = len(
+                            response_tokens) + seq_group.get_seqs()[0].get_len()
+
+                        # Check length. (Move to FINISHED_IGNORED and free if reaching prompt lnegth limit.)
+                        if num_cross_tokens > self.prompt_limit:
+                            logger.warning(
+                                f"Reponse tokens plus kv cache ({num_cross_tokens} tokens) is too long"
+                                f" and exceeds limit of {self.prompt_limit}")
+                            for seq in seq_group.get_seqs():
+                                seq.status = SequenceStatus.FINISHED_IGNORED
+                                self.free_seq(seq)
+                            ignored_seq_groups.append(seq_group)
+                            self.blocked.remove(seq_group)
+                            continue
+                        # If the sequence group either cannot be swapped in or cannot be allocated, continue.
+                        if not self.block_manager.can_allocate(seq_group):
+                            continue
+                        # If the number of batched tokens exceeds the limit, continue.
+                        new_seq_lens = seq_lens + [num_cross_tokens]
+                        num_batched_tokens = len(new_seq_lens) * max(new_seq_lens)
+                        if (num_batched_tokens > self.scheduler_config.max_num_batched_tokens):
+                            continue
+                        # The total number of sequences in the RUNNING state should not
+                        # exceed the maximum number of sequences.
+                        num_new_seqs = seq_group.get_max_num_running_seqs()
+                        if (num_curr_seqs + num_new_seqs >
+                            self.scheduler_config.max_num_seqs):
+                            continue
+                        num_paddings = num_batched_tokens - sum(new_seq_lens)
+                        if num_paddings > self.scheduler_config.max_paddings:
+                            continue
+                        # Update statistics.
+                        seq_lens = new_seq_lens
+                        num_curr_seqs += num_new_seqs
+                        # Move from blocked to running & modify state to running.
+                        self.blocked.remove(seq_group)
+                        self.running.append(seq_group)
+                        for seq in seq_group.get_seqs():
+                            seq.status = SequenceStatus.SWAPPED
+                        # Swap in and append blocks.
+                        self._swap_in(seq_group, blocks_to_swap_in)
+                        for seq in seq_group.get_seqs():
+                            seq.status = SequenceStatus.RUNNING
+                        self._append_slots(seq_group, blocks_to_copy)
+                        # Produce SchedulerOutputs
+                        scheduled.append(seq_group)
+                    else:
+                        self.unblock(seq_group)
+            if scheduled or ignored_seq_groups:
+                scheduler_outputs = SchedulerOutputs(
+                    scheduled_seq_groups=scheduled,
+                    run_mode=2,
+                    num_batched_tokens=len(
+                        seq_lens) * max(seq_lens) if len(seq_lens) > 0 else 0,
+                    blocks_to_swap_in=blocks_to_swap_in,
+                    blocks_to_swap_out=blocks_to_swap_out,
+                    blocks_to_copy=blocks_to_copy,
+                    ignored_seq_groups=ignored_seq_groups,
+                )
+                return scheduler_outputs
+
 
         # Join waiting sequences if possible.
         if not self.swapped:
@@ -201,8 +285,9 @@ class Scheduler:
             if scheduled or ignored_seq_groups:
                 scheduler_outputs = SchedulerOutputs(
                     scheduled_seq_groups=scheduled,
-                    prompt_run=True,
-                    num_batched_tokens=len(seq_lens) * max(seq_lens) if len(seq_lens) > 0 else 0,
+                    run_mode=1,
+                    num_batched_tokens=len(
+                        seq_lens) * max(seq_lens) if len(seq_lens) > 0 else 0,
                     blocks_to_swap_in=blocks_to_swap_in,
                     blocks_to_swap_out=blocks_to_swap_out,
                     blocks_to_copy=blocks_to_copy,
@@ -273,7 +358,7 @@ class Scheduler:
 
         scheduler_outputs = SchedulerOutputs(
             scheduled_seq_groups=self.running,
-            prompt_run=False,
+            run_mode=0,
             num_batched_tokens=num_batched_tokens,
             blocks_to_swap_in=blocks_to_swap_in,
             blocks_to_swap_out=blocks_to_swap_out,
@@ -300,7 +385,8 @@ class Scheduler:
 
             seq_group_metadata = SequenceGroupMetadata(
                 request_id=seq_group.request_id,
-                is_prompt=scheduler_outputs.prompt_run,
+                is_prompt=scheduler_outputs.run_mode == 1,
+                is_cross=scheduler_outputs.run_mode == 2,
                 seq_data=seq_data,
                 sampling_params=seq_group.sampling_params,
                 block_tables=block_tables,
@@ -332,6 +418,20 @@ class Scheduler:
     ) -> None:
         for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
             ret = self.block_manager.append_slot(seq)
+            if ret is not None:
+                src_block, dst_block = ret
+                if src_block in blocks_to_copy:
+                    blocks_to_copy[src_block].append(dst_block)
+                else:
+                    blocks_to_copy[src_block] = [dst_block]
+
+    def _append_slots(
+        self,
+        seq_group: SequenceGroup,
+        blocks_to_copy: Dict[int, List[int]],
+    ) -> None:
+        for seq in seq_group.get_seqs(status=SequenceStatus.RUNNING):
+            ret = self.block_manager.append_slots(seq)
             if ret is not None:
                 src_block, dst_block = ret
                 if src_block in blocks_to_copy:
@@ -412,12 +512,13 @@ class Scheduler:
             seq.status = SequenceStatus.SWAPPED
 
     def unblock(self,
-        seq_group: SequenceGroup,
-        preemption_mode: Optional[PreemptionMode] = None) -> None:
+                seq_group: SequenceGroup,
+                preemption_mode: Optional[PreemptionMode] = None) -> None:
         self.blocked.remove(seq_group)
 
         assert len(seq_group.get_seqs()) == 1
-        response_tokens = self.tokenizer.encode(input_prompt([seq_group.get_seqs()[0].api_info.task.result()]))
+        response_tokens = self.tokenizer.encode(input_prompt(
+            [seq_group.get_seqs()[0].api_info.task.result()]))
         if len(response_tokens) + seq_group.get_seqs()[0].get_len() > self.prompt_limit:
             preemption_mode = PreemptionMode.RECOMPUTE
             seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
@@ -435,8 +536,8 @@ class Scheduler:
             assert False, "Invalid preemption mode."
 
     def block(self,
-        seq_group: SequenceGroup,
-        preemption_mode: Optional[PreemptionMode] = None) -> None:
+              seq_group: SequenceGroup,
+              preemption_mode: Optional[PreemptionMode] = None) -> None:
         self.blocked.append(seq_group)
         self.running.remove(seq_group)
         seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
@@ -471,7 +572,8 @@ class Scheduler:
         seqs = seq_group.get_seqs(status=SequenceStatus.API_BLOCKED)
         assert len(seqs) == 1
         for seq in seqs:
-            seq.api_info.conversation_history.append(seq.api_info.task.result())
+            seq.api_info.conversation_history.append(
+                seq.api_info.task.result())
             new_prompt = input_prompt([seq.api_info.task.result()])
             new_prompt_token_ids = self.tokenizer.encode(new_prompt)
             for token_id in new_prompt_token_ids:
@@ -501,17 +603,20 @@ class Scheduler:
         seq_group: SequenceGroup,
     ) -> None:
         for seq in seq_group.get_seqs(status=SequenceStatus.API_BLOCKED):
-            seq.api_info.conversation_history.append(seq.api_info.task.result())
-            seq.api_info.response_tokens = self.tokenizer.encode(input_prompt([seq.api_info.task.result()]))
-            seq.append_token_id(seq.api_info.response_tokens[0], {seq.api_info.response_tokens[0]: 0})
+            seq.api_info.conversation_history.append(
+                seq.api_info.task.result())
+            seq.api_info.response_tokens = self.tokenizer.encode(
+                input_prompt([seq.api_info.task.result()]))
+            seq.append_token_id(seq.api_info.response_tokens[0], {
+                                seq.api_info.response_tokens[0]: 0})
             self._decode_sequence(seq, seq_group.sampling_params)
-            seq.api_info.response_next = 1 if len(seq.api_info.response_tokens) > 1 else -1
+            seq.api_info.response_next = 1 if len(
+                seq.api_info.response_tokens) > 1 else -1
             seq.status = SequenceStatus.SWAPPED
         self.swapped.append(seq_group)
 
-
     def get_preemption_mode(self, seq_group: SequenceGroup,
-        preemption_mode: Optional[PreemptionMode] = None) -> PreemptionMode:
+                            preemption_mode: Optional[PreemptionMode] = None) -> PreemptionMode:
         if preemption_mode is None:
             if seq_group.get_max_num_running_seqs() == 1:
                 preemption_mode = PreemptionMode.RECOMPUTE
@@ -530,7 +635,7 @@ class Scheduler:
              read_offset=seq.read_offset,
              skip_special_tokens=prms.skip_special_tokens,
              spaces_between_special_tokens=prms.spaces_between_special_tokens,
-         )
+        )
         if seq.tokens is None:
             seq.tokens = new_tokens
         else:

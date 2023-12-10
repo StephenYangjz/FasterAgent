@@ -97,6 +97,7 @@ class Worker:
             seq = SequenceGroupMetadata(
                 request_id=str(group_id),
                 is_prompt=True,
+                is_cross=False,
                 seq_data={group_id: seq_data},
                 sampling_params=sampling_params,
                 block_tables=None,
@@ -153,15 +154,79 @@ class Worker:
         seq_groups: List[Tuple[List[int], SamplingParams]] = []
         input_tokens: List[List[int]] = []
         input_positions: List[List[int]] = []
+        context_lens: List[List[int]] = []
+        max_context_len = 0
         slot_mapping: List[List[int]] = []
+        max_num_blocks_per_seq = 0
+        generation_block_tables: List[List[int]] = []
         selected_token_indices: List[int] = []
         selected_token_start_idx = 0
         categorized_sample_indices = {t: [] for t in SamplingType}
         categorized_sample_indices_start_idx = 0
+        is_cross = False
+
+        # Add response tokens.
+        response_lens: List[int] = []
+        for seq_group_metadata in seq_group_metadata_list:
+            if not seq_group_metadata.is_cross:
+                continue
+            is_cross = True
+            seq_ids = list(seq_group_metadata.seq_data.keys())
+            assert len(seq_ids) == 1
+            sampling_params = seq_group_metadata.sampling_params
+            # Get seq_groups.
+            seq_groups.append((seq_ids, sampling_params))
+
+            # Use any sequence in the group.
+            seq_id = seq_ids[0]
+
+            seq_data = seq_group_metadata.seq_data[seq_id]
+            response_tokens = seq_data.get_response_token_ids()
+            response_len = len(response_tokens)
+            # Get response_lens.
+            response_lens.append(response_len)
+
+            # Get input_tokens.
+            input_tokens.append(response_tokens)
+            # Get input_positions.
+            context_len = seq_data.get_len()
+            if self.sliding_window is not None:
+                context_len = min(context_len, self.sliding_window)
+            input_positions.append(list(range(context_len - response_len, context_len)))
+
+            # Get slot_mapping, generation_block_tables and max_num_blocks_per_seq.
+            slot_mapping.append([])
+            block_table = seq_group_metadata.block_tables[seq_id]
+            max_num_blocks_per_seq = max(max_num_blocks_per_seq,
+                                             len(block_table))
+
+            for i in input_positions[-1]:
+                block_number = block_table[i // self.block_size]
+                block_offset = i % self.block_size
+                slot = block_number * self.block_size + block_offset
+                slot_mapping[-1].append(slot)
+
+            if self.sliding_window is not None:
+                sliding_window_blocks = (self.sliding_window //
+                                            self.block_size)
+                block_table = block_table[-sliding_window_blocks:]
+            generation_block_tables.append(block_table)
+
+            # Get context_lens and max_context_len.
+            context_lens.append(list(range(context_len - response_len + 1, context_len + 1)))
+            max_context_len = max(max_context_len, context_len)
+
+            # Get categorized_sample_indices.
+            categorized_sample_indices[sampling_params.sampling_type].append(
+                categorized_sample_indices_start_idx)
+            categorized_sample_indices_start_idx += 1
+
 
         # Add prompt tokens.
         prompt_lens: List[int] = []
         for seq_group_metadata in seq_group_metadata_list:
+            if seq_group_metadata.is_cross:
+                continue
             if not seq_group_metadata.is_prompt:
                 continue
 
@@ -206,12 +271,17 @@ class Worker:
                 slot_mapping[-1].append(slot)
 
         # Add generation tokens.
-        max_context_len = 0
-        max_num_blocks_per_seq = 0
-        context_lens: List[int] = []
-        generation_block_tables: List[List[int]] = []
         max_seq_len = max(prompt_lens) if prompt_lens else 1
+        if response_lens:
+            max_seq_len = max(response_lens)
         for i, seq_group_metadata in enumerate(seq_group_metadata_list):
+            if seq_group_metadata.is_cross:
+                # Get selected_token_indices.
+                response_len = response_lens[i]
+                selected_token_indices.append(selected_token_start_idx +
+                                              response_len - 1)
+                selected_token_start_idx += max_seq_len
+                continue
             if seq_group_metadata.is_prompt:
                 # We need to do this in this loop as we need to know max_seq_len
                 assert len(
@@ -259,7 +329,7 @@ class Worker:
                 max_context_len = max(max_context_len, context_len)
                 max_num_blocks_per_seq = max(max_num_blocks_per_seq,
                                              len(block_table))
-                context_lens.append(context_len)
+                context_lens.append([context_len])
 
                 block_number = block_table[position // self.block_size]
                 block_offset = position % self.block_size
@@ -278,6 +348,10 @@ class Worker:
         padded_input_positions = [
             _pad_to_max(positions, max_seq_len, pad=0)
             for positions in input_positions
+        ]
+        padded_context_lens = [
+            _pad_to_max(lens, max_seq_len, pad=1)
+            for lens in context_lens
         ]
         padded_slot_mapping = [
             _pad_to_max(mapping, max_seq_len, pad=-1)
@@ -298,7 +372,7 @@ class Worker:
         slot_mapping_tensor = torch.tensor(padded_slot_mapping,
                                            dtype=torch.long,
                                            device="cuda")
-        context_lens_tensor = torch.tensor(context_lens,
+        context_lens_tensor = torch.tensor(padded_context_lens,
                                            dtype=torch.int,
                                            device="cuda")
         selected_token_indices = torch.tensor(selected_token_indices,
@@ -317,6 +391,7 @@ class Worker:
             seq_data.update(seq_group_metadata.seq_data)
 
         input_metadata = InputMetadata(
+            is_cross=is_cross,
             seq_groups=seq_groups,
             seq_data=seq_data,
             prompt_lens=prompt_lens,

@@ -301,6 +301,8 @@ class LlamaForCausalLM(nn.Module):
     ) -> SamplerOutput:
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    input_metadata, cache_events)
+        if torch.isnan(hidden_states).sum().item() > 0 or torch.isinf(hidden_states).sum().item() > 0:
+            raise ValueError(f"invalid hidden states")
         next_tokens = self.sampler(self.lm_head.weight, hidden_states,
                                    input_metadata)
         return next_tokens

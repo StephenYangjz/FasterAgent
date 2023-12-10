@@ -287,6 +287,7 @@ class SchedulerConfig:
             and generated text).
         max_paddings: Maximum number of paddings to be added to a batch.
         preemption_mode: Preemption modes.
+        use_cross: Use paged cross attention kernel or not.
     """
 
     def __init__(
@@ -295,6 +296,7 @@ class SchedulerConfig:
         max_num_seqs: int,
         max_model_len: int,
         max_paddings: int,
+        use_cross: bool = False,
         preemption_mode: Optional[PreemptionMode] = None,
         policy: Optional[str] = None,
     ) -> None:
@@ -307,6 +309,7 @@ class SchedulerConfig:
         self.max_num_seqs = max_num_seqs
         self.max_model_len = max_model_len
         self.max_paddings = max_paddings
+        self.use_cross = use_cross
         self.preemption_mode = preemption_mode
         self.policy = policy
         self._verify_args()

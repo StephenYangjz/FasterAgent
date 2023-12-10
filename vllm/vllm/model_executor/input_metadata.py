@@ -22,6 +22,7 @@ class InputMetadata:
 
     def __init__(
         self,
+        is_cross: bool,
         seq_groups: List[Tuple[List[int], SamplingParams]],
         seq_data: Dict[int, SequenceData],
         prompt_lens: List[int],
@@ -73,6 +74,7 @@ class InputMetadata:
 
         # Set during the execution of the first attention op.
         self.attn_bias: Optional[AttentionBias] = None
+        self.is_cross = is_cross
 
     def __repr__(self) -> str:
         # Print only useful metadata.

@@ -203,6 +203,42 @@ class PagedAttention(nn.Module):
                 alibi_slopes,
             )
 
+    def multi_query_cached_kv_attention(
+        self,
+        output: torch.Tensor,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        input_metadata: InputMetadata,
+        alibi_slopes: Optional[torch.Tensor],
+    ) -> None:
+        """PagedCrossAttention for the response tokens.
+
+        Args:
+            output: shape = [num_seqs, seq_lens, num_heads, head_size]
+            query: shape = [num_seqs, seq_lens, num_heads, head_size]
+            key_cache: shape = [num_blocks, num_kv_heads, head_size/x,
+                block_size, x]
+            value_cache: shape = [num_blocks, num_kv_heads, head_size,
+                block_size]
+            input_metadata: metadata for paged cross attention.
+            alibi_slopes: shape = [num_heads]
+        """
+        block_size = value_cache.shape[3]
+        attention_ops.paged_cross_attention_v1(
+            output,
+            query,
+            key_cache,
+            value_cache,
+            self.head_mapping,
+            self.scale,
+            input_metadata.block_tables,
+            input_metadata.context_lens,
+            block_size,
+            input_metadata.max_context_len,
+            alibi_slopes,
+        )
+
     def forward(
         self,
         query: torch.Tensor,
@@ -243,7 +279,7 @@ class PagedAttention(nn.Module):
 
         # Compute the attention op for prompts.
         num_prompt_tokens = input_metadata.num_prompt_tokens
-        if num_prompt_tokens > 0:
+        if num_prompt_tokens > 0 and not input_metadata.is_cross:
             # Prompt run.
             assert input_metadata.num_generation_tokens == 0
             self.set_attn_bias(input_metadata, dtype=query.dtype)
@@ -279,7 +315,7 @@ class PagedAttention(nn.Module):
                 slot_mapping,
             )
 
-        if input_metadata.num_generation_tokens > 0:
+        if input_metadata.num_generation_tokens > 0 and not input_metadata.is_cross:
             # Decoding run.
             assert input_metadata.num_prompt_tokens == 0
             assert key_cache is not None and value_cache is not None, (
@@ -289,6 +325,19 @@ class PagedAttention(nn.Module):
             self.single_query_cached_kv_attention(output, query, key_cache,
                                                   value_cache, input_metadata,
                                                   self.get_alibi_slopes())
+
+        if input_metadata.is_cross:
+            assert key_cache is not None and value_cache is not None, (
+                "key_cache and value_cache must be provided when "
+                "generating response tokens.")
+            # Compute the attention op for response tokens.
+            output = output.view(batch_size, seq_len,
+                                 self.num_heads, self.head_size)
+            query = query.view(batch_size, seq_len,
+                               self.num_heads, self.head_size).contiguous()
+            self.multi_query_cached_kv_attention(output, query, key_cache,
+                                                 value_cache, input_metadata,
+                                                 self.get_alibi_slopes())
 
         # Reshape the output tensor.
         # NOTE(woosuk): The output tensor may include paddings.
