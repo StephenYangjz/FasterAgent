@@ -110,7 +110,7 @@ def test_cross_paged_attention(
             head_mapping,
             scale,
             block_tables,
-            context_lens[:, q_token_idx].contiguous(),
+            context_lens[:, q_token_idx].contiguous().unsqueeze(-1),
             block_size,
             max_context_len - seq_lens + 1 + q_token_idx,
             alibi_slopes,
@@ -144,4 +144,4 @@ def test_cross_paged_attention(
     # NOTE(woosuk): Due to the kernel-level differences in the two
     # implementations, there is a small numerical difference in the two
     # outputs. Thus, we use a relaxed tolerance for the test.
-    assert torch.allclose(output, ref_output, atol=1e-3, rtol=1e-5)
+    assert torch.allclose(output, ref_output, atol=0, rtol=0)

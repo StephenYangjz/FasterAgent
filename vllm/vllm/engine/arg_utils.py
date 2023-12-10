@@ -31,6 +31,7 @@ class EngineArgs:
     revision: Optional[str] = None
     tokenizer_revision: Optional[str] = None
     quantization: Optional[str] = None
+    use_cross: bool = False
     preemption_mode: Optional[PreemptionMode] = None
     policy: str = 'fcfs'
 
@@ -172,6 +173,9 @@ class EngineArgs:
                             choices=['awq', 'squeezellm', None],
                             default=None,
                             help='Method used to quantize the weights')
+        parser.add_argument('--use-cross',
+                            action='store_true',
+                            help='use paged cross attention cuda kernel')
         parser.add_argument('--preemption-mode',
                             type=lambda preemption_mode: PreemptionMode[preemption_mode],
                             default=EngineArgs.preemption_mode,
@@ -211,6 +215,7 @@ class EngineArgs:
                                            self.max_num_seqs,
                                            model_config.max_model_len,
                                            self.max_paddings,
+                                           self.use_cross,
                                            self.preemption_mode,
                                            self.policy)
         return model_config, cache_config, parallel_config, scheduler_config

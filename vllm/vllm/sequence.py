@@ -69,6 +69,7 @@ class SequenceData:
         self.prompt_token_ids = prompt_token_ids
         self.output_token_ids: List[int] = []
         self.cumulative_logprob = 0.0
+        self.response_token_ids: List[int] = []
 
     def append_token_id(self, token_id: int, logprob: float) -> None:
         self.output_token_ids.append(token_id)
@@ -90,6 +91,12 @@ class SequenceData:
         if not self.output_token_ids:
             return self.prompt_token_ids[-1]
         return self.output_token_ids[-1]
+
+    def set_response_token_ids(self, response_token_ids: List[int]) -> None:
+        self.response_token_ids = response_token_ids
+
+    def get_response_token_ids(self) -> List[int]:
+        return self.response_token_ids
 
     def __repr__(self) -> str:
         return (f"SequenceData("
@@ -169,6 +176,9 @@ class Sequence:
         self._append_tokens_to_blocks([token_id])
         self.output_logprobs.append(logprobs)
         self.data.append_token_id(token_id, logprobs[token_id])
+
+    def set_response_token_ids(self, response_token_ids: List[int]) -> None:
+        self.data.set_response_token_ids(response_token_ids)
 
     def get_len(self) -> int:
         return self.data.get_len()
@@ -335,6 +345,7 @@ class SequenceGroupMetadata:
     Args:
         request_id: The ID of the request.
         is_prompt: Whether the request is at prompt stage.
+        is_cross: Whether the request is at cross stage.
         seq_data: The sequence data. (Seq id -> sequence data)
         sampling_params: The sampling parameters used to generate the outputs.
         block_tables: The block tables. (Seq id -> list of physical block
@@ -345,12 +356,14 @@ class SequenceGroupMetadata:
         self,
         request_id: str,
         is_prompt: bool,
+        is_cross: bool,
         seq_data: Dict[int, SequenceData],
         sampling_params: SamplingParams,
         block_tables: Dict[int, List[int]],
     ) -> None:
         self.request_id = request_id
         self.is_prompt = is_prompt
+        self.is_cross = is_cross
         self.seq_data = seq_data
         self.sampling_params = sampling_params
         self.block_tables = block_tables
@@ -358,6 +371,7 @@ class SequenceGroupMetadata:
     def __repr__(self) -> str:
         return (f"SequenceGroupMetadata(request_id={self.request_id}, "
                 f"is_prompt={self.is_prompt}, "
+                f"is_cross={self.is_cross}, "
                 f"seq_data={self.seq_data}, "
                 f"sampling_params={self.sampling_params}, "
                 f"block_tables={self.block_tables})")
