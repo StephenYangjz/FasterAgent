@@ -104,7 +104,6 @@ class Task:
 
 
 class Timer(Task):
-    print("xxx")
     def __init__(self, delay: int, response: Dict, std = 0.1):
         self.done_time = delay / 1000 + time.monotonic() + torch.normal(mean=torch.Tensor([0.0]), std=torch.Tensor([std]))[0]
         self.response = response
