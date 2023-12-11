@@ -151,14 +151,18 @@ class Scheduler:
                         # Do not sort blocked queue for now.
                         response_tokens = 0
                         for seq in seq_group.get_seqs():
-                            seq.api_info.conversation_history.append(
-                            seq.api_info.task.result())
-                            response_tokens = self.tokenizer.encode(
-                            input_prompt([seq.api_info.task.result()]))
-                            seq.set_response_token_ids(response_tokens)
-                            for token_id in response_tokens:
-                                seq.append_token_id(token_id, {token_id: 0})
-                                self._decode_sequence(seq, seq_group.sampling_params)
+                            if not seq.api_info.has_get_response:
+                                seq.api_info.conversation_history.append(
+                                seq.api_info.task.result())
+                                response_tokens = self.tokenizer.encode(
+                                input_prompt([seq.api_info.task.result()]))
+                                seq.set_response_token_ids(response_tokens)
+                                for token_id in response_tokens:
+                                    seq.append_token_id(token_id, {token_id: 0})
+                                    self._decode_sequence(seq, seq_group.sampling_params)
+                                seq.api_info.has_get_response = True
+                            else:
+                                response_tokens = seq.get_response_token_ids()
                         num_cross_tokens = len(
                             response_tokens) + seq_group.get_seqs()[0].get_len()
 

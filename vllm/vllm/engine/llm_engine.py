@@ -764,6 +764,7 @@ class LLMEngine:
                 seq.status = SequenceStatus.FINISHED_STOPPED
             else:
                 seq.api_info.task = call_api(seq.api_info.function_info[function_name], args_dict)
+                seq.api_info.has_get_response = False
                 seq.status = SequenceStatus.API_BLOCKED
         return should_call_api
 

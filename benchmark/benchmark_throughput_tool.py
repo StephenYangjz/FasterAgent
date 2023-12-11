@@ -260,15 +260,18 @@ def calculate_throughput(
     mid_time = all_start_times[-20] - all_start_times[20] + all_e2e_latencies[-20]
     all_tokens = 0
     for i in range(100):
-        if all_start_times[i] + all_e2e_latencies[i] > all_start_times[-20] + all_e2e_latencies[-20]:
+        if all_start_times[i] + all_e2e_latencies[i] < all_start_times[-20] + all_e2e_latencies[-20] and all_start_times[i] + all_e2e_latencies[i] > all_start_times[20]:
             all_tokens += prompt_lens[i] + response_lens[i]
     throughput_tok_s = all_tokens / mid_time
     qps = len(responses) / dur_s
 
     mean_e2e_latency = np.mean(all_e2e_latencies)
 
+    # 90% tail latency
+    tail_latency = np.percentile(np.array(all_e2e_latencies), 90)
+
     with open(results_filename, "a") as f:
-        msg = f"backend {backend} dur_s {dur_s:.02f} real_throughput {throughput_tok_s:.02f} tokens_per_s {old_throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}"
+        msg = f"backend {backend} dur_s {dur_s:.02f} real_throughput {throughput_tok_s:.02f} tokens_per_s {old_throughput_tok_s:.02f} qps {qps:.02f} successful_responses {len(responses)} prompt_token_count {prompt_token_count} response_token_count {response_token_count}, {median_token_latency=}, {median_e2e_latency=}, {mean_e2e_latency=}, 90_{tail_latency=}"
         if log_latencies:
             msg += f" {all_e2e_latencies=} {all_per_token_latencies=}"
         print(msg, file=f)

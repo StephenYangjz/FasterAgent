@@ -180,6 +180,9 @@ class Sequence:
     def set_response_token_ids(self, response_token_ids: List[int]) -> None:
         self.data.set_response_token_ids(response_token_ids)
 
+    def get_response_token_ids(self) -> List[int]:
+        return self.data.get_response_token_ids()
+
     def get_len(self) -> int:
         return self.data.get_len()
 
